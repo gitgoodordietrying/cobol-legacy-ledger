@@ -1,7 +1,7 @@
-*================================================================*
-* ACCTREC.cpy — Account Record Layout
-* Used by: ACCOUNTS.cob, TRANSACT.cob, REPORTS.cob, VALIDATE.cob
-*================================================================*
+*> ================================================================
+*> ACCTREC.cpy — Account Record Layout
+*> Used by: ACCOUNTS.cob, TRANSACT.cob, REPORTS.cob, VALIDATE.cob
+*> ================================================================
  01  ACCOUNT-RECORD.
      05  ACCT-ID              PIC X(10).
      05  ACCT-NAME            PIC X(30).

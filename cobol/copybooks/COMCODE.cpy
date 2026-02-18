@@ -1,7 +1,7 @@
-*================================================================*
-* COMCODE.cpy — Common Status Codes and Bank IDs
-* Shared across all COBOL programs and all 6 nodes
-*================================================================*
+*> ================================================================
+*> COMCODE.cpy — Common Status Codes and Bank IDs
+*> Shared across all COBOL programs and all 6 nodes
+*> ================================================================
  01  RESULT-CODES.
      05  RC-SUCCESS           PIC X(2) VALUE '00'.
      05  RC-NSF               PIC X(2) VALUE '01'.

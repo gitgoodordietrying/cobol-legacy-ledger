@@ -1,9 +1,9 @@
-      *================================================================*
-      * REPORTS.cob — Reporting and Reconciliation
-      * System: cobol-legacy-ledger | Purpose: Generate reports
-      * Operations: STATEMENT, LEDGER, EOD, AUDIT
-      * Output Format: Pipe-delimited to STDOUT
-      *================================================================*
+      *> ================================================================
+      *> REPORTS.cob — Reporting and Reconciliation
+      *> System: cobol-legacy-ledger | Purpose: Generate reports
+      *> Operations: STATEMENT, LEDGER, EOD, AUDIT
+      *> Output Format: Pipe-delimited to STDOUT
+      *> ================================================================
        IDENTIFICATION DIVISION.
        PROGRAM-ID. REPORTS.
 

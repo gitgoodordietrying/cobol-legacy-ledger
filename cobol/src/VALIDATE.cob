@@ -1,9 +1,9 @@
-      *================================================================*
-      * VALIDATE.cob — Business Rules & Validation
-      * System: cobol-legacy-ledger | Purpose: Validate transactions
-      * Operations: CHECK-BALANCE, CHECK-LIMIT, CHECK-STATUS
-      * Output Format: RESULT|{RC} to STDOUT
-      *================================================================*
+      *> ================================================================
+      *> VALIDATE.cob — Business Rules & Validation
+      *> System: cobol-legacy-ledger | Purpose: Validate transactions
+      *> Operations: CHECK-BALANCE, CHECK-LIMIT, CHECK-STATUS
+      *> Output Format: RESULT|{RC} to STDOUT
+      *> ================================================================
        IDENTIFICATION DIVISION.
        PROGRAM-ID. VALIDATE.
 
@@ -24,7 +24,7 @@
        01  WS-FILE-STATUS         PIC XX VALUE SPACES.
        01  WS-IN-ACCT-ID          PIC X(10) VALUE SPACES.
        01  WS-IN-AMOUNT           PIC S9(10)V99 VALUE 0.
-       01  WS-RESULT-CODE         PIC X(2) VALUE RC-SUCCESS.
+       01  WS-RESULT-CODE         PIC X(2) VALUE '00'.
        COPY "COMCODE.cpy".
 
        PROCEDURE DIVISION.

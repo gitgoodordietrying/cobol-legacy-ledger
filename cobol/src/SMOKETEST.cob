@@ -1,10 +1,10 @@
-      *================================================================*
-      * SMOKETEST.cob — Compiler and I/O verification
-      * Tests: compilation, copybook resolution, file write, file read,
-      *        fixed-width record format, pipe-delimited DISPLAY output
-      * Compile: cobc -x -free -I ../copybooks SMOKETEST.cob -o ../bin/SMOKETEST
-      * Run:     cd banks/BANK_A && ../../cobol/bin/SMOKETEST
-      *================================================================*
+      *> ================================================================
+      *> SMOKETEST.cob — Compiler and I/O verification
+      *> Tests: compilation, copybook resolution, file write, file read,
+      *>        fixed-width record format, pipe-delimited DISPLAY output
+      *> Compile: cobc -x -free -I ../copybooks SMOKETEST.cob -o ../bin/SMOKETEST
+      *> Run:     cd banks/BANK_A && ../../cobol/bin/SMOKETEST
+      *> ================================================================
        IDENTIFICATION DIVISION.
        PROGRAM-ID. SMOKETEST.
 
@@ -91,5 +91,5 @@
            CLOSE ACCOUNT-FILE.
 
        CLEANUP.
-      *    Test file is left in banks/BANK_A/TEST-ACCOUNTS.DAT for inspection
+      *>   Test file is left in banks/BANK_A/TEST-ACCOUNTS.DAT for inspection
            DISPLAY "SMOKE-TEST|PASS|All checks succeeded".

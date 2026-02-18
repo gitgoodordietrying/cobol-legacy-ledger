@@ -1,10 +1,10 @@
-      *================================================================*
-      * ACCOUNTS.cob — Account Lifecycle Management
-      * System: cobol-legacy-ledger | Node: BANK_{node} | Purpose: Account CRUD operations
-      * Operations: CREATE, READ, UPDATE, CLOSE, LIST
-      * Files: ACCOUNTS.DAT (input/output), OUTPUT.DAT (results)
-      * Output Format: Pipe-delimited to STDOUT
-      *================================================================*
+      *> ================================================================
+      *> ACCOUNTS.cob — Account Lifecycle Management
+      *> System: cobol-legacy-ledger | Node: BANK_{node} | Purpose: Account CRUD operations
+      *> Operations: CREATE, READ, UPDATE, CLOSE, LIST
+      *> Files: ACCOUNTS.DAT (input/output), OUTPUT.DAT (results)
+      *> Output Format: Pipe-delimited to STDOUT
+      *> ================================================================
        IDENTIFICATION DIVISION.
        PROGRAM-ID. ACCOUNTS.
 
