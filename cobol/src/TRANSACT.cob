@@ -1,10 +1,10 @@
-      *================================================================*
-      * TRANSACT.cob — Transaction Processing Engine
-      * System: cobol-legacy-ledger | Purpose: Process deposits, withdrawals, transfers
-      * Operations: DEPOSIT, WITHDRAW, TRANSFER, BATCH
-      * Files: ACCOUNTS.DAT, TRANSACT.DAT, BATCH-INPUT.DAT
-      * Output Format: Pipe-delimited to STDOUT
-      *================================================================*
+      *> ================================================================
+      *> TRANSACT.cob — Transaction Processing Engine
+      *> System: cobol-legacy-ledger | Purpose: Process deposits, withdrawals, transfers
+      *> Operations: DEPOSIT, WITHDRAW, TRANSFER, BATCH
+      *> Files: ACCOUNTS.DAT, TRANSACT.DAT, BATCH-INPUT.DAT
+      *> Output Format: Pipe-delimited to STDOUT
+      *> ================================================================
        IDENTIFICATION DIVISION.
        PROGRAM-ID. TRANSACT.
 

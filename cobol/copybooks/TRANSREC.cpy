@@ -1,7 +1,7 @@
-*================================================================*
-* TRANSREC.cpy — Transaction Record Layout
-* Used by: TRANSACT.cob, REPORTS.cob, VALIDATE.cob
-*================================================================*
+*> ================================================================
+*> TRANSREC.cpy — Transaction Record Layout
+*> Used by: TRANSACT.cob, REPORTS.cob, VALIDATE.cob
+*> ================================================================
  01  TRANSACTION-RECORD.
      05  TRANS-ID             PIC X(12).
      05  TRANS-ACCT-ID        PIC X(10).
