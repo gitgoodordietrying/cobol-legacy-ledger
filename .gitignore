@@ -1,0 +1,12 @@
+cobol/bin/
+data/
+python/venv/
+__pycache__/
+*.pyc
+*.db
+.server_key
+.api_keys
+*.egg-info/
+.DS_Store
+.pytest_cache/
+*.log
