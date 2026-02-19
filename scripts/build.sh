@@ -13,6 +13,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 if command -v cobc &> /dev/null; then
   COBC="cobc"
   echo "Using local cobc: $(which cobc)"
+elif [ -f /.dockerenv ]; then
+  # Already inside a Docker container — cobc must be here (cobol-dev image)
+  echo "Running inside Docker. cobc expected at: $(which cobc 2>/dev/null || echo NOT FOUND)"
+  COBC="cobc"
 else
   COBC="$SCRIPT_DIR/cobol-run.sh cobc"
   echo "cobc not found locally. Using Docker fallback."

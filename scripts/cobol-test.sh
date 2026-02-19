@@ -38,11 +38,11 @@ run_cobol() {
   local program="$1"
   shift
 
-  if command -v cobc &> /dev/null; then
-    # Local execution
+  if command -v cobc &> /dev/null || [ -f /.dockerenv ]; then
+    # Local cobc available, OR already inside Docker — run binary directly
     (cd "$DATA_DIR" && "$PROJECT_ROOT/cobol/bin/$program" "$@")
   else
-    # Docker execution
+    # Host without cobc — use Docker wrapper (spawns container for each call)
     "$SCRIPT_DIR/cobol-run.sh" bash -c "cd /app/banks/$NODE && /app/cobol/bin/$program $*"
   fi
 }
