@@ -9,10 +9,15 @@ set -e
 
 echo "Seeding Phase 1: Building COBOL and initializing all nodes..."
 
-# Step 1: Try to compile COBOL (graceful skip if cobc unavailable)
+# Step 1: Check if COBOL binaries exist (skip build if they do)
 echo ""
-echo "Step 1: Build COBOL (if available)..."
-./scripts/build.sh
+echo "Step 1: Checking COBOL binaries..."
+if [ -f "cobol/bin/ACCOUNTS" ] && [ -f "cobol/bin/TRANSACT" ] && [ -f "cobol/bin/VALIDATE" ] && [ -f "cobol/bin/REPORTS" ]; then
+  echo "✓ All binaries exist, skipping build"
+else
+  echo "Building COBOL (if available)..."
+  ./scripts/build.sh
+fi
 
 # Step 2: Create Python venv if needed
 if [ ! -d "python/venv" ]; then

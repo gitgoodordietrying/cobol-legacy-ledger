@@ -23,14 +23,19 @@ echo "=========================================="
 echo "COBOL SYSTEM TEST — $NODE"
 echo "=========================================="
 
-# Step 0: Build all COBOL programs
+# Step 0: Build all COBOL programs (skip if binaries exist)
 echo ""
-echo "Step 0: Compiling COBOL programs..."
-if "$SCRIPT_DIR/build.sh" > /dev/null 2>&1; then
-  echo -e "${GREEN}✓ Build successful${NC}"
+echo "Step 0: Checking COBOL binaries..."
+if [ -f "$PROJECT_ROOT/cobol/bin/ACCOUNTS" ] && [ -f "$PROJECT_ROOT/cobol/bin/TRANSACT" ] && [ -f "$PROJECT_ROOT/cobol/bin/VALIDATE" ] && [ -f "$PROJECT_ROOT/cobol/bin/REPORTS" ]; then
+  echo -e "${GREEN}✓ All binaries exist, skipping build${NC}"
 else
-  echo -e "${RED}✗ Build failed${NC}"
-  exit 1
+  echo "Building COBOL programs..."
+  if "$SCRIPT_DIR/build.sh" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Build successful${NC}"
+  else
+    echo -e "${RED}✗ Build failed${NC}"
+    exit 1
+  fi
 fi
 
 # Helper: Determine COBOL run command
