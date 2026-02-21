@@ -40,11 +40,23 @@ for PROG in "${PROGRAMS[@]}"; do
   fi
 
   echo -n "BUILD $PROG ... "
-  if $COBC -x -free -I "$PROJECT_ROOT/cobol/copybooks" "$PROG_PATH" -o "$BIN_PATH" 2>&1; then
-    echo "OK"
+  # Use relative paths for Docker compatibility (Docker workdir is /app)
+  if [ "$COBC" = "cobc" ]; then
+    # Local cobc — use absolute paths
+    if $COBC -x -free -I "$PROJECT_ROOT/cobol/copybooks" "$PROG_PATH" -o "$BIN_PATH" 2>&1; then
+      echo "OK"
+    else
+      echo "FAIL"
+      FAILED_PROGRAMS+=("$PROG")
+    fi
   else
-    echo "FAIL"
-    FAILED_PROGRAMS+=("$PROG")
+    # Docker cobc (via cobol-run.sh) — use relative paths from /app
+    if $COBC -x -free -I cobol/copybooks "cobol/src/${PROG}.cob" -o "cobol/bin/${PROG}" 2>&1; then
+      echo "OK"
+    else
+      echo "FAIL"
+      FAILED_PROGRAMS+=("$PROG")
+    fi
   fi
 done
 

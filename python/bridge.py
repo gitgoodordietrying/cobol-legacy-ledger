@@ -68,7 +68,7 @@ class COBOLBridge:
         :param bin_dir: Directory containing compiled COBOL binaries
         """
         self.node = node
-        self.data_dir = Path(data_dir) / node.lower().replace("_", "-")
+        self.data_dir = Path(data_dir) / node  # Fixed: use node directly (BANK_A not bank-a)
         self.bin_dir = Path(bin_dir).resolve()
         self.work_dir = self.data_dir  # Working directory for COBOL subprocess
 
@@ -76,7 +76,7 @@ class COBOLBridge:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize database (per-node, one SQLite file)
-        db_path = self.data_dir / f"{self.node.lower().replace('_', '_')}.db"
+        db_path = self.data_dir / f"{self.node.lower()}.db"  # bank_a.db format
         self.db = sqlite3.connect(str(db_path))
         self.db.row_factory = sqlite3.Row  # Return dicts instead of tuples
 
@@ -103,40 +103,46 @@ class COBOLBridge:
     def _parse_balance(self, balance_bytes: bytes) -> float:
         """
         Parse 12-byte balance field (PIC S9(10)V99 with implied decimal).
-        GnuCOBOL stores signed numeric as EBCDIC or ASCII digits with sign indicator.
-        For simplicity, treat as ASCII string: 10 digits + sign + 2 fractional digits.
+        GnuCOBOL stores signed numeric as ASCII digits with sign indicator.
 
-        Example: b'000001234567' → 12345.67
-        The storage is 12 bytes: 10 digits + 2 fractional digits (no literal decimal).
+        Two formats supported:
+        1. Implied decimal (seed format): b'000001234567' → 12345.67 (12 ASCII digits)
+        2. Explicit decimal (after COBOL update): '+0000012345.67' or '-0000012345.67' (14 chars with sign+period)
+
+        Examples:
+        - b'000001234567' → 12345.67 (10 digits + 2 fractional, no decimal)
+        - b'+0000012345.67' → 12345.67 (GnuCOBOL output format with literal decimal)
         """
         try:
             # Decode as ASCII text (GnuCOBOL line-sequential format)
             balance_str = balance_bytes.decode('ascii').strip()
 
-            # Handle sign (leading minus or trailing negative indicator)
-            # GnuCOBOL may use trailing '-' or overpunch characters for negatives
+            # Handle sign (leading +/- or trailing negative indicator)
             is_negative = False
             if balance_str.startswith('-'):
                 is_negative = True
+                balance_str = balance_str[1:]
+            elif balance_str.startswith('+'):
                 balance_str = balance_str[1:]
             elif balance_str.endswith('-'):
                 is_negative = True
                 balance_str = balance_str[:-1]
 
-            # Parse as numeric: 10 + 2 fractional digits
-            # If we have 12 digits, split into integer (10) + fraction (2)
-            if len(balance_str) == 12 and balance_str.isdigit():
+            # CRITICAL: GnuCOBOL may output explicit decimal: +0000012345.67 format
+            # Check if we have explicit decimal point (newer COBOL format)
+            if '.' in balance_str:
+                # Explicit decimal format: parse directly
+                balance = float(balance_str)
+            elif len(balance_str) == 12 and balance_str.isdigit():
+                # Implied decimal format (10 digits + 2 fractional): split manually
                 integer_part = int(balance_str[:10])
                 fraction_part = int(balance_str[10:12])
                 balance = integer_part + (fraction_part / 100.0)
             else:
-                # Fallback: parse directly as float
-                # Insert decimal point 2 positions from right if no decimal present
-                if '.' not in balance_str:
-                    if len(balance_str) >= 2:
-                        balance = float(balance_str[:-2] + '.' + balance_str[-2:])
-                    else:
-                        balance = float(balance_str)
+                # Fallback: try direct float conversion
+                if len(balance_str) >= 2 and '.' not in balance_str:
+                    # Insert decimal point 2 positions from right
+                    balance = float(balance_str[:-2] + '.' + balance_str[-2:])
                 else:
                     balance = float(balance_str)
 
@@ -233,6 +239,172 @@ class COBOLBridge:
 
         return accounts
 
+    def process_transaction_via_cobol(self, tx_type: str, account_id: str, amount: float,
+                                     description: str, target_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Process a transaction by calling COBOL TRANSACT binary (Mode A).
+        Parses output: OK|{TYPE}|{TX_ID}|{ACCOUNT}|{BALANCE} and RESULT|{STATUS}
+        """
+        if not self.cobol_available:
+            return {"status": "99", "message": "COBOL not available"}
+
+        result = {"status": "99", "message": "Unknown error"}
+        try:
+            args = [str(self.bin_dir / "TRANSACT"), tx_type.upper(), account_id, str(amount), description]
+            if target_id:
+                args.append(target_id)
+
+            proc = subprocess.run(
+                args,
+                cwd=str(self.work_dir),
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            # Parse output: RESULT|{STATUS} at end, and OK|... if success
+            for line in proc.stdout.strip().split('\n'):
+                if line.startswith("RESULT|"):
+                    result["status"] = line.split('|')[1] if len(line.split('|')) > 1 else "99"
+                elif line.startswith("OK|"):
+                    parts = line.split('|')
+                    if len(parts) >= 5:
+                        result.update({
+                            "message": f"Transaction {tx_type} processed",
+                            "tx_id": parts[2],
+                            "new_balance": float(parts[4]) if parts[4] else 0.0
+                        })
+
+        except subprocess.TimeoutExpired:
+            result["message"] = "TRANSACT program timed out"
+        except Exception as e:
+            result["message"] = f"Error executing TRANSACT: {e}"
+
+        return result
+
+    def validate_transaction_via_cobol(self, account_id: str, amount: float) -> Dict[str, str]:
+        """
+        Validate a transaction by calling COBOL VALIDATE binary (Mode A).
+        Parses output: RESULT|{STATUS}
+        """
+        if not self.cobol_available:
+            return {"status": "99", "message": "COBOL not available"}
+
+        result = {"status": "99", "message": "Unknown error"}
+        try:
+            proc = subprocess.run(
+                [str(self.bin_dir / "VALIDATE"), account_id, str(amount)],
+                cwd=str(self.work_dir),
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            for line in proc.stdout.strip().split('\n'):
+                if line.startswith("RESULT|"):
+                    result["status"] = line.split('|')[1] if len(line.split('|')) > 1 else "99"
+                    result["message"] = self._status_code_to_message(result["status"])
+
+        except subprocess.TimeoutExpired:
+            result["message"] = "VALIDATE program timed out"
+        except Exception as e:
+            result["message"] = f"Error executing VALIDATE: {e}"
+
+        return result
+
+    def get_reports_via_cobol(self, report_type: str, account_id: Optional[str] = None) -> List[str]:
+        """
+        Get reports by calling COBOL REPORTS binary (Mode A).
+        Returns list of report lines (pipe-delimited).
+        Parses output: LEDGER|... or STATEMENT|... or EOD|... or AUDIT|...
+        """
+        if not self.cobol_available:
+            return ["ERROR: COBOL not available"]
+
+        report_lines = []
+        try:
+            args = [str(self.bin_dir / "REPORTS"), report_type.upper()]
+            if account_id and report_type.upper() == "STATEMENT":
+                args.append(account_id)
+
+            proc = subprocess.run(
+                args,
+                cwd=str(self.work_dir),
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            for line in proc.stdout.strip().split('\n'):
+                if not line.startswith("RESULT|"):
+                    report_lines.append(line)
+
+        except subprocess.TimeoutExpired:
+            report_lines.append("ERROR: REPORTS program timed out")
+        except Exception as e:
+            report_lines.append(f"ERROR executing REPORTS: {e}")
+
+        return report_lines
+
+    def process_batch_via_cobol(self) -> Dict[str, Any]:
+        """
+        Process batch by calling COBOL TRANSACT BATCH (Mode A).
+        Parses columnar output with compliance notes.
+        Returns summary with success/fail counts.
+        """
+        if not self.cobol_available:
+            return {"status": "99", "message": "COBOL not available", "output": []}
+
+        result = {"status": "99", "message": "Unknown error", "output": [], "summary": {}}
+        try:
+            proc = subprocess.run(
+                [str(self.bin_dir / "TRANSACT"), "BATCH"],
+                cwd=str(self.work_dir),
+                capture_output=True,
+                text=True,
+                timeout=30  # Batch may take longer
+            )
+
+            output_lines = proc.stdout.strip().split('\n')
+            result["output"] = output_lines
+
+            # Parse summary lines (after "--- END BATCH RUN ---")
+            in_summary = False
+            for line in output_lines:
+                if "--- END BATCH RUN ---" in line:
+                    in_summary = True
+                    continue
+                if in_summary and "Total transactions read:" in line:
+                    result["summary"]["total"] = int(line.split(":")[-1].strip())
+                elif in_summary and "Successful:" in line:
+                    result["summary"]["success"] = int(line.split(":")[-1].strip())
+                elif in_summary and "Failed:" in line:
+                    result["summary"]["failed"] = int(line.split(":")[-1].strip())
+
+            # Check for RESULT| line
+            for line in output_lines:
+                if line.startswith("RESULT|"):
+                    result["status"] = line.split('|')[1] if len(line.split('|')) > 1 else "99"
+
+        except subprocess.TimeoutExpired:
+            result["message"] = "TRANSACT BATCH timed out"
+        except Exception as e:
+            result["message"] = f"Error executing TRANSACT BATCH: {e}"
+
+        return result
+
+    def _status_code_to_message(self, code: str) -> str:
+        """Convert status code to human-readable message."""
+        messages = {
+            "00": "Success",
+            "01": "Insufficient funds",
+            "02": "Limit exceeded",
+            "03": "Invalid account",
+            "04": "Account frozen",
+            "99": "System error",
+        }
+        return messages.get(code, f"Unknown status: {code}")
+
     def list_accounts(self) -> List[Dict[str, Any]]:
         """
         List all accounts. Sync from DAT file if fresh.
@@ -282,8 +454,37 @@ class COBOLBridge:
                            description: str, target_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Process a transaction (D=deposit, W=withdraw, T=transfer, etc.).
-        Returns {status, tx_id, message, ...}
+        Uses COBOL subprocess (Mode A) if available, falls back to Python validation (Mode B).
+        Returns {status, tx_id, message, new_balance, ...}
         """
+        # If COBOL is available, delegate to COBOL TRANSACT binary
+        if self.cobol_available:
+            result = self.process_transaction_via_cobol(tx_type, account_id, amount, description, target_id)
+            if result["status"] == "00":
+                # Record in integrity chain (Python layer wraps COBOL)
+                ts_now = datetime.now().isoformat()
+                tx_id = result.get("tx_id", "")
+                if tx_id:
+                    self.chain.append(
+                        tx_id=tx_id,
+                        account_id=account_id,
+                        tx_type=tx_type,
+                        amount=amount,
+                        timestamp=ts_now,
+                        description=description,
+                        status="00"
+                    )
+                    # Also record in SQLite for reporting
+                    self.db.execute(
+                        """INSERT INTO transactions
+                           (tx_id, account_id, type, amount, timestamp, description, status)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (tx_id, account_id, tx_type, amount, ts_now, description, "00")
+                    )
+                    self.db.commit()
+            return result
+
+        # Fallback: Python-only validation (Mode B)
         # Validate account exists
         account = self.get_account(account_id)
         if not account:
@@ -294,8 +495,8 @@ class COBOLBridge:
             if account["balance"] < amount:
                 return {"status": "01", "message": "Insufficient funds"}
 
-        # Check daily limits
-        DAILY_LIMIT = 10000.00  # From COMCODE.cpy
+        # Check daily limits (50000.00 from TRANSACT.cob)
+        DAILY_LIMIT = 50000.00
         if amount > DAILY_LIMIT:
             return {"status": "02", "message": "Limit exceeded"}
 

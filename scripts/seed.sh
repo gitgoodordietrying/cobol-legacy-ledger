@@ -127,7 +127,7 @@ bank_data = {
 
 # Create all node directories and ACCOUNTS.DAT files
 for node, accounts in bank_data.items():
-    node_dir = Path(f"banks/{node.lower().replace('_', '-')}")
+    node_dir = Path(f"banks/{node}")  # Fix: use BANK_A not bank-a
     node_dir.mkdir(parents=True, exist_ok=True)
 
     accounts_file = node_dir / "ACCOUNTS.DAT"
@@ -135,9 +135,87 @@ for node, accounts in bank_data.items():
         for acct_id, name, acct_type, balance, status in accounts:
             write_fixed_width_record(f, acct_id, name, acct_type, balance, status, 20260217, 20260217)
 
+    # Create empty TRANSACT.DAT (COBOL will EXTEND/append to it)
+    transact_file = node_dir / "TRANSACT.DAT"
+    transact_file.touch()
+
     print(f"  ✓ {node}: {len(accounts)} accounts → {accounts_file}")
 
 print(f"✓ All {sum(len(a) for a in bank_data.values())} accounts written")
+EOF
+
+# Step 3b: Generate BATCH-INPUT.DAT for each node (pipe-delimited)
+echo ""
+echo "Step 3b: Generating BATCH-INPUT.DAT for batch processing..."
+
+python3 - <<'EOF'
+from pathlib import Path
+
+# Batch samples: ACCT|TYPE|AMOUNT|DESC or ACCT|T|AMOUNT|DESC|TARGET
+batch_samples = {
+    "BANK_A": [
+        "ACT-A-001|D|5000.00|Payroll deposit — Santos",
+        "ACT-A-003|W|750.00|ATM withdrawal — Chen",
+        "ACT-A-006|D|9500.00|Cash deposit — Elena Petrov",
+        "ACT-A-004|D|2100.00|Insurance premium — Williams",
+        "ACT-A-002|W|25000.00|Insufficient funds — Rodriguez",
+        "ACT-A-005|T|3200.00|Transfer to ACT-A-007|ACT-A-007",
+        "ACT-A-007|I|45.23|Monthly interest credit — Okafor",
+        "ACT-A-008|W|500.00|Account frozen — no activity",
+    ],
+    "BANK_B": [
+        "ACT-B-001|D|50000.00|Wire in — TechStart",
+        "ACT-B-002|W|25000.00|Operating expense — Logistics",
+        "ACT-B-003|D|100000.00|Investor contribution",
+        "ACT-B-004|T|75000.00|Consolidation|ACT-B-001",
+        "ACT-B-005|D|12500.00|Premium payment",
+        "ACT-B-006|W|50000.00|Payroll distribution",
+        "ACT-B-007|I|1250.50|Monthly interest",
+    ],
+    "BANK_C": [
+        "ACT-C-001|D|25000.00|Deposit — Wong",
+        "ACT-C-002|W|10000.00|Withdrawal — O'Brien",
+        "ACT-C-003|D|50000.00|Corporate transfer",
+        "ACT-C-004|D|12500.00|Contribution",
+        "ACT-C-005|W|15000.00|Disbursement",
+        "ACT-C-006|T|30000.00|Inter-account|ACT-C-002",
+        "ACT-C-007|I|800.00|Interest credit",
+        "ACT-C-008|D|20000.00|Deposit — Rivera",
+    ],
+    "BANK_D": [
+        "ACT-D-001|D|500000.00|Large deposit — Trust",
+        "ACT-D-002|W|250000.00|Portfolio adjustment",
+        "ACT-D-003|D|100000.00|New investment",
+        "ACT-D-004|T|750000.00|Strategic move|ACT-D-001",
+        "ACT-D-005|D|1000000.00|Capital infusion",
+        "ACT-D-006|I|50000.00|Monthly accrual",
+    ],
+    "BANK_E": [
+        "ACT-E-001|D|150000.00|Community grant",
+        "ACT-E-002|W|5000.00|Personal withdrawal",
+        "ACT-E-003|D|250000.00|Loan pool deposit",
+        "ACT-E-004|W|10000.00|Personal disbursement",
+        "ACT-E-005|D|50000.00|Food bank contribution",
+        "ACT-E-006|T|100000.00|Development project|ACT-E-001",
+        "ACT-E-007|D|75000.00|Entrepreneurship fund",
+        "ACT-E-008|I|2000.00|Savings interest",
+    ],
+    "CLEARING": [
+        "NST-BANK-A|D|15000.00|Settlement in — BANK_A",
+        "NST-BANK-B|D|25000.00|Settlement in — BANK_B",
+        "NST-BANK-C|D|45000.00|Settlement in — BANK_C",
+        "NST-BANK-D|D|500000.00|Settlement in — BANK_D",
+        "NST-BANK-E|D|75000.00|Settlement in — BANK_E",
+    ],
+}
+
+for node, batches in batch_samples.items():
+    batch_file = Path(f"banks/{node}/BATCH-INPUT.DAT")
+    with open(batch_file, 'w') as f:
+        f.write('\n'.join(batches) + '\n')
+    print(f"  ✓ {node}: {len(batches)} batch records → {batch_file}")
+
+print(f"✓ All BATCH-INPUT.DAT files created")
 EOF
 
 # Step 4: Initialize SQLite databases and sync accounts

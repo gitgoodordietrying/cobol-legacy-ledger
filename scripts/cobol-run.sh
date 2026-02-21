@@ -10,6 +10,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Convert to Windows path for Docker (handles Git Bash MSYS2 /b/... paths)
+if command -v cygpath &> /dev/null; then
+  DOCKER_PROJECT_ROOT="$(cygpath -w "$PROJECT_ROOT")"
+else
+  DOCKER_PROJECT_ROOT="$PROJECT_ROOT"
+fi
+
 IMAGE_NAME="cobol-dev"
 DOCKERFILE_PATH="$PROJECT_ROOT/Dockerfile.cobol"
 
@@ -21,7 +28,7 @@ fi
 
 # Run command in container with project mounted at /app
 docker run --rm \
-  -v "$PROJECT_ROOT":/app \
+  -v "$DOCKER_PROJECT_ROOT":/app \
   -w /app \
   "$IMAGE_NAME" \
   "$@"
