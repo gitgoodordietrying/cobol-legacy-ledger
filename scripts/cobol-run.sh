@@ -11,11 +11,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Convert to Windows path for Docker (handles Git Bash MSYS2 /b/... paths)
-if command -v cygpath &> /dev/null; then
-  DOCKER_PROJECT_ROOT="$(cygpath -w "$PROJECT_ROOT")"
-else
-  DOCKER_PROJECT_ROOT="$PROJECT_ROOT"
-fi
+# Try pwd -W first (Git Bash), then cygpath (Cygwin), else use as-is
+DOCKER_PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -W 2>/dev/null || cygpath -w "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT")"
+
+# Debug: show the paths being used
+# echo "DEBUG: PROJECT_ROOT=$PROJECT_ROOT"
+# echo "DEBUG: DOCKER_PROJECT_ROOT=$DOCKER_PROJECT_ROOT"
 
 IMAGE_NAME="cobol-dev"
 DOCKERFILE_PATH="$PROJECT_ROOT/Dockerfile.cobol"
@@ -27,8 +28,10 @@ if ! docker image inspect "$IMAGE_NAME" &> /dev/null; then
 fi
 
 # Run command in container with project mounted at /app
+# Escape backslashes for Windows paths if present
+DOCKER_VOL_PATH="$DOCKER_PROJECT_ROOT"
 docker run --rm \
-  -v "$DOCKER_PROJECT_ROOT":/app \
+  -v "$DOCKER_VOL_PATH":/app \
   -w /app \
   "$IMAGE_NAME" \
   "$@"
