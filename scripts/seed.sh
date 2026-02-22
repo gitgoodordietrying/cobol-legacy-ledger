@@ -34,7 +34,7 @@ fi
 echo ""
 echo "Step 3: Generating fixed-width ACCOUNTS.DAT for all nodes..."
 
-python3 - <<'EOF'
+python - <<'EOF'
 import os
 from pathlib import Path
 from struct import pack
@@ -153,7 +153,7 @@ EOF
 echo ""
 echo "Step 3b: Generating BATCH-INPUT.DAT for batch processing..."
 
-python3 - <<'EOF'
+python - <<'EOF'
 from pathlib import Path
 
 # Batch samples: ACCT|TYPE|AMOUNT|DESC or ACCT|T|AMOUNT|DESC|TARGET
@@ -227,7 +227,7 @@ EOF
 echo ""
 echo "Step 4: Initializing SQLite and syncing accounts..."
 
-python3 - <<'EOF'
+python - <<'EOF'
 from pathlib import Path
 from python.bridge import COBOLBridge
 
@@ -246,7 +246,7 @@ EOF
 echo ""
 echo "✓ Phase 1 seeding complete!"
 echo ""
-echo "Verification: python3 -c \\"
+echo "Verification: python -c \\"
 echo "  from python.bridge import COBOLBridge; "
 echo "  for n in ['BANK_A','BANK_B','BANK_C','BANK_D','BANK_E','CLEARING']: "
 echo "    b = COBOLBridge(node=n); print(f'{n}: {len(b.list_accounts())} accts'); b.close()\""

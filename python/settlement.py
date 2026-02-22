@@ -54,17 +54,17 @@ class SettlementResult:
 class SettlementCoordinator:
     """Orchestrates inter-bank transfers across 6 COBOL nodes."""
 
-    def __init__(self, project_root: str):
+    def __init__(self, data_dir: str = "banks"):
         """
         Initialize coordinator with bridges to all 6 nodes.
 
         Args:
-            project_root: Path to project root (parent of banks/ directory)
+            data_dir: Directory containing per-node subdirectories (default: banks)
         """
-        self.project_root = project_root
+        self.data_dir = data_dir
         self.nodes = {}
         for node in ['BANK_A', 'BANK_B', 'BANK_C', 'BANK_D', 'BANK_E', 'CLEARING']:
-            self.nodes[node] = COBOLBridge(node=node, project_root=project_root)
+            self.nodes[node] = COBOLBridge(node=node, data_dir=data_dir)
 
         self._settlement_counter = 0
 

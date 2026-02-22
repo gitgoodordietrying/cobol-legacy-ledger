@@ -171,7 +171,7 @@ def transfer(source_spec: str, dest_spec: str, amount: float, desc: str, data_di
         click.echo("Error: Use format BANK_X:ACT-X-NNN", err=True)
         sys.exit(1)
 
-    coordinator = SettlementCoordinator(project_root=str(Path(data_dir).parent))
+    coordinator = SettlementCoordinator(data_dir=data_dir)
     result = coordinator.execute_transfer(
         source_bank=source_bank,
         source_account=source_acct,
@@ -219,18 +219,14 @@ def transfer(source_spec: str, dest_spec: str, amount: float, desc: str, data_di
 
 
 @cli.command()
-@click.option('--demo', is_flag=True, default=True, help='Run demo batch settlement')
 @click.option('--data-dir', default='banks', help='Data directory')
-def settle(demo: bool, data_dir: str):
-    """Execute batch settlement across all nodes.
+def settle(data_dir: str):
+    """Execute demo batch settlement across all nodes.
 
-    With --demo (default): Runs 8 pre-defined transfers exercising all banks with normal,
-    large, and failure scenarios. Shows balance before/after and calculates net positions.
+    Runs 8 pre-defined transfers exercising all banks with normal, large,
+    and failure scenarios. Shows balance before/after and calculates net positions.
     """
-    if not demo:
-        click.echo("Custom batch settlement not yet implemented. Use --demo for demo batch.")
-        sys.exit(1)
-    coordinator = SettlementCoordinator(project_root=str(Path(data_dir).parent))
+    coordinator = SettlementCoordinator(data_dir=data_dir)
 
     click.echo("")
     click.echo("╔══════════════════════════════════════════════════════════════╗")
