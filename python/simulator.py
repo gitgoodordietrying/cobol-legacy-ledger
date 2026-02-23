@@ -1,0 +1,704 @@
+"""
+simulator.py — Two-layer banking day simulator for the COBOL settlement network.
+
+Generates realistic daily banking activity across all 5 banks with two layers:
+  1. External: Inter-bank transfers through the clearing house (settlement)
+  2. Internal: Intra-bank deposits, withdrawals, transfers, interest, fees
+
+Each bank has a "personality" that determines transaction frequency, size ranges,
+and descriptions. Produces 6 distinct log streams (1 settlement + 5 bank internals).
+
+Usage:
+    python -m python.cli simulate --days 30 --seed 42
+    python -m python.cli simulate --days 365 --seed 42 --output-dir logs/
+"""
+
+import csv
+import os
+import random
+import signal
+import sys
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional, TextIO
+
+from .settlement import SettlementCoordinator
+from .cross_verify import CrossNodeVerifier
+
+
+# Bank personalities with internal transaction profiles
+BANK_PROFILES = {
+    'BANK_A': {
+        'label': 'retail',
+        'min': 50, 'max': 2000, 'weight': 1.4,
+        'payroll_freq': 'biweekly', 'payroll_min': 1500, 'payroll_max': 4500,
+        'bill_min': 25, 'bill_max': 350,
+        'internal_xfer_min': 100, 'internal_xfer_max': 2000,
+        'descriptions': {
+            'payroll': ["Payroll deposit — Santos", "Payroll deposit — Chen",
+                        "Payroll deposit — Williams", "Direct deposit — Park",
+                        "Salary deposit — Okafor"],
+            'bill': ["Electric bill PMT", "Cable subscription", "Phone bill",
+                     "Water utility", "Internet service", "Gym membership",
+                     "Streaming subscription", "Insurance premium"],
+            'xfer': ["Checking to savings", "Savings to checking",
+                     "Emergency fund transfer", "Vacation fund deposit"],
+        },
+    },
+    'BANK_B': {
+        'label': 'corporate',
+        'min': 1000, 'max': 25000, 'weight': 1.0,
+        'payroll_freq': 'biweekly', 'payroll_min': 8000, 'payroll_max': 35000,
+        'bill_min': 500, 'bill_max': 5000,
+        'internal_xfer_min': 2000, 'internal_xfer_max': 20000,
+        'descriptions': {
+            'payroll': ["Corp payroll run", "Executive comp deposit",
+                        "Contractor payment", "Bonus disbursement"],
+            'bill': ["Vendor invoice PMT", "Lease payment", "SaaS subscription",
+                     "Legal retainer", "Office supplies", "Cloud hosting"],
+            'xfer': ["Operating to reserve", "Reserve to operating",
+                     "Capital allocation", "Treasury sweep"],
+        },
+    },
+    'BANK_C': {
+        'label': 'wealth mgmt',
+        'min': 500, 'max': 15000, 'weight': 1.0,
+        'payroll_freq': 'monthly', 'payroll_min': 5000, 'payroll_max': 25000,
+        'bill_min': 200, 'bill_max': 3000,
+        'internal_xfer_min': 5000, 'internal_xfer_max': 50000,
+        'descriptions': {
+            'payroll': ["Quarterly dividend", "Trust distribution",
+                        "Advisory fee rebate", "Portfolio income"],
+            'bill': ["Advisory fee", "Custodian fee", "Wire fee",
+                     "Account maintenance", "Tax preparation"],
+            'xfer': ["Portfolio rebalance", "Tax-loss harvest proceeds",
+                     "Margin account funding", "CD maturity rollover"],
+        },
+    },
+    'BANK_D': {
+        'label': 'institutional',
+        'min': 5000, 'max': 45000, 'weight': 0.6,
+        'payroll_freq': 'monthly', 'payroll_min': 15000, 'payroll_max': 45000,
+        'bill_min': 2000, 'bill_max': 15000,
+        'internal_xfer_min': 10000, 'internal_xfer_max': 40000,
+        'descriptions': {
+            'payroll': ["Trust fund distribution", "Endowment payout",
+                        "Pension disbursement", "Foundation grant"],
+            'bill': ["Fiduciary fee", "Audit expense", "Compliance cost",
+                     "Regulatory assessment", "Custodial services"],
+            'xfer': ["Institutional rebalance", "Liquidity management",
+                     "Duration matching", "Collateral posting"],
+        },
+    },
+    'BANK_E': {
+        'label': 'community',
+        'min': 100, 'max': 5000, 'weight': 1.0,
+        'payroll_freq': 'biweekly', 'payroll_min': 1200, 'payroll_max': 3500,
+        'bill_min': 15, 'bill_max': 250,
+        'internal_xfer_min': 50, 'internal_xfer_max': 1500,
+        'descriptions': {
+            'payroll': ["Grant disbursement", "Donation deposit",
+                        "Cooperative dividend", "Stipend payment",
+                        "Community share payout"],
+            'bill': ["Co-op fee", "Community dues", "Utility PMT",
+                     "Rent payment", "Local vendor PMT"],
+            'xfer': ["Share account transfer", "Holiday club deposit",
+                     "Youth savings deposit", "Emergency fund"],
+        },
+    },
+}
+
+BANKS = list(BANK_PROFILES.keys())
+
+# External transfer descriptions (inter-bank)
+EXTERNAL_DESCRIPTIONS = [
+    "Wire transfer", "Invoice PMT", "Payroll", "Vendor payment",
+    "Loan repayment", "Insurance premium", "Equipment lease",
+    "Consulting fee", "Quarterly dividend", "Service charge",
+    "Account funding", "Trade settlement", "Refund",
+    "Subscription PMT", "Maintenance fee", "Commission",
+]
+
+NEAR_CTR_CHANCE = 0.05  # 5% chance of near-CTR amount ($9,000-$9,999)
+
+
+class SimulationLogger:
+    """Manages 6 output log streams: 1 settlement + 5 bank internals."""
+
+    def __init__(self, output_dir: Optional[str] = None):
+        self.output_dir = Path(output_dir) if output_dir else None
+        self._log_files: Dict[str, TextIO] = {}
+        self._csv_writers: Dict[str, csv.writer] = {}
+        self._csv_files: Dict[str, TextIO] = {}
+
+        if self.output_dir:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            self._open_files()
+
+    def _open_files(self):
+        """Open all 6 log files + 6 CSV files."""
+        streams = ['SETTLEMENT'] + [f'{b}_INTERNAL' for b in BANKS]
+        for name in streams:
+            log_path = self.output_dir / f"{name}.log"
+            csv_path = self.output_dir / f"{name}.csv"
+            self._log_files[name] = open(log_path, 'w', encoding='utf-8')
+            self._csv_files[name] = open(csv_path, 'w', newline='', encoding='utf-8')
+            self._csv_writers[name] = csv.writer(self._csv_files[name])
+            # CSV headers
+            self._csv_writers[name].writerow([
+                'day', 'date', 'time', 'type', 'source_bank', 'source_account',
+                'dest_bank', 'dest_account', 'amount', 'status', 'description', 'ref'
+            ])
+
+    def log(self, stream: str, message: str):
+        """Write to a log stream."""
+        if stream in self._log_files:
+            self._log_files[stream].write(message + '\n')
+
+    def log_csv(self, stream: str, row: list):
+        """Write a CSV row to a stream."""
+        if stream in self._csv_writers:
+            self._csv_writers[stream].writerow(row)
+
+    def log_day_header(self, stream: str, day_num: int, date_str: str):
+        """Write a day header to a log stream."""
+        header = f"\n{'=' * 3} DAY {day_num} | {date_str} {'=' * (52 - len(date_str) - len(str(day_num)))}"
+        self.log(stream, header)
+
+    def log_eod_summary(self, stream: str, completed: int, failed: int, volume: float):
+        """Write EOD summary to a log stream."""
+        self.log(stream, f"  -- EOD Summary {'-' * 50}")
+        self.log(stream, f"  {completed} completed | {failed} failed | ${volume:,.2f} volume")
+
+    def log_monthly_summary(self, stream: str, month: str, interest: float,
+                            fees: float, internal_count: int, external_count: int):
+        """Write monthly summary block."""
+        self.log(stream, "")
+        self.log(stream, f"  === MONTHLY SUMMARY — {month} ===")
+        self.log(stream, f"  Interest accrued:  ${interest:,.2f}")
+        self.log(stream, f"  Fees collected:    ${fees:,.2f}")
+        self.log(stream, f"  Internal txns:     {internal_count}")
+        self.log(stream, f"  External txns:     {external_count}")
+        self.log(stream, f"  {'=' * 40}")
+
+    def close(self):
+        """Close all open files."""
+        for f in self._log_files.values():
+            f.close()
+        for f in self._csv_files.values():
+            f.close()
+
+
+class SimulationEngine:
+    """Generates and executes realistic banking days across the settlement network."""
+
+    def __init__(
+        self,
+        data_dir: str = "banks",
+        time_scale: int = 3600,
+        tx_range: Tuple[int, int] = (25, 100),
+        verify_every: int = 5,
+        seed: Optional[int] = None,
+        output_dir: Optional[str] = None,
+        internal_ratio: int = 40,
+        monthly_events: bool = True,
+    ):
+        self.data_dir = data_dir
+        self.time_scale = time_scale
+        self.tx_min, self.tx_max = tx_range
+        self.verify_every = verify_every
+        self.rng = random.Random(seed)
+        self.output_dir = output_dir
+        self.internal_ratio = internal_ratio
+        self.monthly_events = monthly_events
+
+        self.coordinator = SettlementCoordinator(data_dir=data_dir)
+        self._account_cache: Dict[str, List[Dict]] = {}
+        self._stopped = False
+
+        # Logger
+        self.logger = SimulationLogger(output_dir=output_dir)
+
+        # Stats
+        self.total_completed = 0
+        self.total_failed = 0
+        self.total_volume = 0.0
+        self.total_internal = 0
+        self.total_external = 0
+        self.days_run = 0
+
+        # Monthly tracking
+        self._current_month = None
+        self._monthly_interest: Dict[str, float] = {b: 0.0 for b in BANKS}
+        self._monthly_fees: Dict[str, float] = {b: 0.0 for b in BANKS}
+        self._monthly_internal_count: Dict[str, int] = {b: 0 for b in BANKS}
+        self._monthly_external_count: Dict[str, int] = {b: 0 for b in BANKS}
+        self._fees_run_months: set = set()
+        self._interest_run_months: set = set()
+
+    def _load_accounts(self):
+        """Cache account lists from all banks."""
+        for bank in BANKS:
+            bridge = self.coordinator.nodes[bank]
+            self._account_cache[bank] = bridge.list_accounts()
+
+    def _refresh_account(self, bank: str, account_id: str) -> Optional[Dict]:
+        """Get fresh balance for a single account."""
+        bridge = self.coordinator.nodes[bank]
+        return bridge.get_account(account_id)
+
+    def _pick_external_transfer(self) -> Optional[Dict]:
+        """Generate a random inter-bank transfer, checking balances to reduce NSF."""
+        weights = [BANK_PROFILES[b]['weight'] for b in BANKS]
+        source_bank = self.rng.choices(BANKS, weights=weights, k=1)[0]
+        dest_bank = self.rng.choice([b for b in BANKS if b != source_bank])
+
+        source_accounts = self._account_cache.get(source_bank, [])
+        dest_accounts = self._account_cache.get(dest_bank, [])
+        if not source_accounts or not dest_accounts:
+            return None
+
+        profile = BANK_PROFILES[source_bank]
+        if self.rng.random() < NEAR_CTR_CHANCE:
+            amount = round(self.rng.uniform(9000, 9999), 2)
+        else:
+            amount = round(self.rng.uniform(profile['min'], profile['max']), 2)
+
+        source_acct = None
+        for _ in range(3):
+            candidate = self.rng.choice(source_accounts)
+            fresh = self._refresh_account(source_bank, candidate['id'])
+            if fresh and fresh['balance'] >= amount and fresh['status'] == 'A':
+                source_acct = fresh
+                break
+
+        if not source_acct:
+            source_acct = self.rng.choice(source_accounts)
+
+        dest_acct = self.rng.choice(dest_accounts)
+        desc = self.rng.choice(EXTERNAL_DESCRIPTIONS)
+
+        return {
+            'source_bank': source_bank,
+            'source_account': source_acct['id'],
+            'dest_bank': dest_bank,
+            'dest_account': dest_acct['id'],
+            'amount': amount,
+            'description': desc,
+        }
+
+    def _pick_internal_transaction(self, bank: str) -> Optional[Dict]:
+        """Generate a random internal transaction for a specific bank."""
+        profile = BANK_PROFILES[bank]
+        accounts = self._account_cache.get(bank, [])
+        if not accounts:
+            return None
+
+        active_accounts = [a for a in accounts if a.get('status', 'A') == 'A']
+        if not active_accounts:
+            return None
+
+        # Pick transaction type: 40% deposit, 30% withdrawal, 30% internal transfer
+        tx_roll = self.rng.random()
+
+        if tx_roll < 0.40:
+            # Deposit (payroll/income)
+            acct = self.rng.choice(active_accounts)
+            amount = round(self.rng.uniform(profile['payroll_min'], profile['payroll_max']), 2)
+            desc = self.rng.choice(profile['descriptions']['payroll'])
+            return {
+                'type': 'deposit', 'bank': bank,
+                'account': acct['id'], 'amount': amount, 'description': desc,
+            }
+
+        elif tx_roll < 0.70:
+            # Withdrawal (bill payment)
+            acct = self.rng.choice(active_accounts)
+            fresh = self._refresh_account(bank, acct['id'])
+            if not fresh:
+                return None
+            amount = round(self.rng.uniform(profile['bill_min'], profile['bill_max']), 2)
+            # Don't exceed balance
+            if amount > fresh['balance'] * 0.8:
+                amount = round(fresh['balance'] * 0.3, 2)
+            if amount <= 0:
+                return None
+            desc = self.rng.choice(profile['descriptions']['bill'])
+            return {
+                'type': 'withdraw', 'bank': bank,
+                'account': acct['id'], 'amount': amount, 'description': desc,
+            }
+
+        else:
+            # Internal transfer (same-bank checking↔savings)
+            if len(active_accounts) < 2:
+                return None
+            source = self.rng.choice(active_accounts)
+            dest = self.rng.choice([a for a in active_accounts if a['id'] != source['id']])
+            fresh = self._refresh_account(bank, source['id'])
+            if not fresh:
+                return None
+            amount = round(self.rng.uniform(
+                profile['internal_xfer_min'], profile['internal_xfer_max']), 2)
+            if amount > fresh['balance'] * 0.5:
+                amount = round(fresh['balance'] * 0.2, 2)
+            if amount <= 0:
+                return None
+            desc = self.rng.choice(profile['descriptions']['xfer'])
+            return {
+                'type': 'transfer', 'bank': bank,
+                'source_account': source['id'], 'dest_account': dest['id'],
+                'amount': amount, 'description': desc,
+            }
+
+    def _execute_internal_transaction(self, tx: Dict, day_num: int,
+                                      sim_time: datetime) -> Optional[str]:
+        """Execute an internal transaction and return a formatted log line."""
+        bank = tx['bank']
+        bridge = self.coordinator.nodes[bank]
+        time_str = sim_time.strftime('%H:%M')
+
+        if tx['type'] == 'deposit':
+            result = bridge.process_transaction(
+                tx['account'], 'D', tx['amount'], tx['description'])
+            status = "OK" if result['status'] == '00' else f"FAIL{result['status']}"
+            line = (f"  {time_str}  {bank}  DEP  {tx['account']}  "
+                    f"${tx['amount']:>10,.2f}  {status}  {tx['description']}")
+
+        elif tx['type'] == 'withdraw':
+            result = bridge.process_transaction(
+                tx['account'], 'W', tx['amount'], tx['description'])
+            status = "OK" if result['status'] == '00' else f"FAIL{result['status']}"
+            line = (f"  {time_str}  {bank}  WDR  {tx['account']}  "
+                    f"${tx['amount']:>10,.2f}  {status}  {tx['description']}")
+
+        elif tx['type'] == 'transfer':
+            result = bridge.process_transaction(
+                tx['source_account'], 'T', tx['amount'], tx['description'],
+                target_id=tx['dest_account'])
+            status = "OK" if result['status'] == '00' else f"FAIL{result['status']}"
+            line = (f"  {time_str}  {bank}  XFR  {tx['source_account']}->{tx['dest_account']}  "
+                    f"${tx['amount']:>10,.2f}  {status}  {tx['description']}")
+        else:
+            return None
+
+        # Log to bank's internal log
+        stream = f"{bank}_INTERNAL"
+        self.logger.log(stream, line)
+        self.logger.log_csv(stream, [
+            day_num, sim_time.strftime('%Y-%m-%d'), time_str,
+            tx['type'][0].upper(),
+            bank, tx.get('account', tx.get('source_account', '')),
+            bank, tx.get('account', tx.get('dest_account', '')),
+            tx['amount'], result['status'], tx['description'], ''
+        ])
+
+        return result['status']
+
+    def _run_monthly_fees(self, day_num: int, sim_date: datetime):
+        """Run fee assessment for all banks (day 1 of month)."""
+        if not self.monthly_events:
+            return
+
+        print(f"  -- Monthly Fee Assessment (Day {day_num}) --")
+        for bank in BANKS:
+            bridge = self.coordinator.nodes[bank]
+            result = bridge.run_fee_batch()
+            fees = result.get('total_fees', 0.0)
+            assessed = result.get('accounts_assessed', 0)
+            self._monthly_fees[bank] += fees
+
+            stream = f"{bank}_INTERNAL"
+            self.logger.log(stream, f"  ** FEE BATCH: {assessed} accounts, ${fees:,.2f} collected")
+            print(f"    {bank}: {assessed} assessed, ${fees:,.2f}")
+
+    def _run_monthly_interest(self, day_num: int, sim_date: datetime):
+        """Run interest accrual for all banks (last business day of month)."""
+        if not self.monthly_events:
+            return
+
+        print(f"  -- Monthly Interest Accrual (Day {day_num}) --")
+        for bank in BANKS:
+            bridge = self.coordinator.nodes[bank]
+            result = bridge.run_interest_batch()
+            interest = result.get('total_interest', 0.0)
+            processed = result.get('accounts_processed', 0)
+            self._monthly_interest[bank] += interest
+
+            stream = f"{bank}_INTERNAL"
+            self.logger.log(stream, f"  ** INTEREST BATCH: {processed} accounts, ${interest:,.2f} accrued")
+            print(f"    {bank}: {processed} processed, ${interest:,.2f}")
+
+    def _run_reconciliation(self, day_num: int):
+        """Run reconciliation for all banks."""
+        print(f"\n  -- Reconciliation (Day {day_num}) --")
+        all_match = True
+        for bank in BANKS:
+            bridge = self.coordinator.nodes[bank]
+            result = bridge.run_reconciliation()
+            matched = result.get('matched', 0)
+            mismatched = result.get('mismatched', 0)
+            status = "MATCH" if mismatched == 0 else "MISMATCH"
+            if mismatched > 0:
+                all_match = False
+
+            stream = f"{bank}_INTERNAL"
+            self.logger.log(stream, f"  ** RECONCILIATION: {matched} matched, {mismatched} mismatched — {status}")
+            print(f"    {bank}: {matched} matched, {mismatched} mismatched — {status}")
+
+        return all_match
+
+    def _is_month_boundary(self, current_date: datetime, next_date: datetime) -> bool:
+        """Check if we're crossing a month boundary."""
+        return current_date.month != next_date.month
+
+    def _is_first_business_day(self, sim_date: datetime) -> bool:
+        """Check if this is the first business day of the month."""
+        return sim_date.day <= 3 and sim_date.weekday() < 5
+
+    def _is_last_business_day(self, sim_date: datetime) -> bool:
+        """Check if this is the last business day of the month."""
+        next_day = sim_date + timedelta(days=1)
+        while next_day.weekday() >= 5:
+            next_day += timedelta(days=1)
+        return next_day.month != sim_date.month
+
+    def _check_month_transition(self, sim_date: datetime):
+        """Handle month boundary: print monthly summaries and reset counters."""
+        month_str = sim_date.strftime('%B %Y')
+        if self._current_month is not None and self._current_month != month_str:
+            # Print monthly summary for each bank
+            for bank in BANKS:
+                stream = f"{bank}_INTERNAL"
+                self.logger.log_monthly_summary(
+                    stream, self._current_month,
+                    self._monthly_interest[bank], self._monthly_fees[bank],
+                    self._monthly_internal_count[bank],
+                    self._monthly_external_count[bank],
+                )
+            # Reset counters
+            for bank in BANKS:
+                self._monthly_interest[bank] = 0.0
+                self._monthly_fees[bank] = 0.0
+                self._monthly_internal_count[bank] = 0
+                self._monthly_external_count[bank] = 0
+
+        self._current_month = month_str
+
+    def _run_day(self, day_num: int, sim_date: datetime):
+        """Execute one simulated banking day."""
+        date_str = sim_date.strftime('%a %Y-%m-%d')
+        header = f"\n{'=' * 3} DAY {day_num} | {date_str} {'=' * (52 - len(date_str) - len(str(day_num)))}"
+        print(header)
+
+        # Check month transition
+        self._check_month_transition(sim_date)
+
+        # Monthly events — use month key to avoid double-firing
+        month_key = sim_date.strftime('%Y-%m')
+        if self._is_first_business_day(sim_date) and month_key not in self._fees_run_months:
+            self._run_monthly_fees(day_num, sim_date)
+            self._fees_run_months.add(month_key)
+
+        if self._is_last_business_day(sim_date) and month_key not in self._interest_run_months:
+            self._run_monthly_interest(day_num, sim_date)
+            self._interest_run_months.add(month_key)
+
+        # Log day header to all streams
+        self.logger.log_day_header('SETTLEMENT', day_num, date_str)
+        for bank in BANKS:
+            self.logger.log_day_header(f'{bank}_INTERNAL', day_num, date_str)
+
+        # Generate transaction count for the day
+        tx_count = self.rng.randint(self.tx_min, self.tx_max)
+
+        # Split between internal and external
+        internal_count = int(tx_count * self.internal_ratio / 100)
+        external_count = tx_count - internal_count
+
+        # Distribute across banking hours (8am-6pm = 10 hours)
+        banking_minutes = 10 * 60
+        all_tx_times = sorted([self.rng.randint(0, banking_minutes - 1) for _ in range(tx_count)])
+
+        day_completed = 0
+        day_failed = 0
+        day_volume = 0.0
+        internal_done = 0
+        external_done = 0
+
+        for i, minutes_offset in enumerate(all_tx_times):
+            if self._stopped:
+                break
+
+            sim_time = sim_date.replace(hour=8, minute=0, second=0) + timedelta(minutes=minutes_offset)
+            time_str = sim_time.strftime('%H:%M')
+
+            # Sleep proportional to time gap
+            if self.time_scale > 0 and i > 0:
+                prev_minutes = all_tx_times[i - 1]
+                gap_sim_seconds = (minutes_offset - prev_minutes) * 60
+                gap_real_seconds = gap_sim_seconds / self.time_scale
+                if gap_real_seconds > 0.01:
+                    time.sleep(gap_real_seconds)
+
+            # Decide: internal or external
+            is_internal = internal_done < internal_count and (
+                external_done >= external_count or self.rng.random() < self.internal_ratio / 100
+            )
+
+            if is_internal:
+                # Pick a random bank for internal activity
+                bank = self.rng.choice(BANKS)
+                tx = self._pick_internal_transaction(bank)
+                if tx:
+                    status = self._execute_internal_transaction(tx, day_num, sim_time)
+                    if status == '00':
+                        day_completed += 1
+                        day_volume += tx['amount']
+                        self._monthly_internal_count[bank] += 1
+                    else:
+                        day_failed += 1
+                    internal_done += 1
+                    self.total_internal += 1
+
+                    # Print compact line to console
+                    tx_type = tx['type'][:3].upper()
+                    acct = tx.get('account', tx.get('source_account', ''))
+                    status_display = "OK" if status == '00' else f"FAIL"
+                    print(f"  {time_str}  {bank}  {tx_type}  {acct}  "
+                          f"${tx['amount']:>10,.2f}  {status_display}")
+                else:
+                    internal_done += 1
+            else:
+                # External transfer
+                transfer = self._pick_external_transfer()
+                if not transfer:
+                    external_done += 1
+                    continue
+
+                result = self.coordinator.execute_transfer(**transfer, sim_date=sim_date)
+
+                ref = result.settlement_ref
+                src = f"{transfer['source_bank']}:{transfer['source_account']}"
+                dst = f"{transfer['dest_bank']}:{transfer['dest_account']}"
+                amt = f"${transfer['amount']:,.2f}"
+
+                if result.status == "COMPLETED":
+                    status = "OK"
+                    day_completed += 1
+                    day_volume += transfer['amount']
+                    self._monthly_external_count[transfer['source_bank']] += 1
+                else:
+                    error_short = result.error.split(':')[-1].strip()[:12] if result.error else "ERROR"
+                    status = f"FAIL {error_short}"
+                    day_failed += 1
+
+                print(f"  {time_str}  {ref}  {src} -> {dst}  {amt:>12}  {status}")
+
+                # Log to settlement log
+                self.logger.log('SETTLEMENT',
+                    f"  {time_str}  {ref}  {src} -> {dst}  {amt:>12}  {status}")
+                self.logger.log_csv('SETTLEMENT', [
+                    day_num, sim_date.strftime('%Y-%m-%d'), time_str, 'S',
+                    transfer['source_bank'], transfer['source_account'],
+                    transfer['dest_bank'], transfer['dest_account'],
+                    transfer['amount'], result.status, transfer['description'], ref
+                ])
+
+                external_done += 1
+                self.total_external += 1
+
+        # EOD summary
+        self.total_completed += day_completed
+        self.total_failed += day_failed
+        self.total_volume += day_volume
+        self.days_run += 1
+
+        summary_line = f"  {day_completed} completed | {day_failed} failed | ${day_volume:,.2f} volume"
+        print(f"  -- EOD Summary {'-' * 50}")
+        print(summary_line)
+
+        # Log EOD to all streams
+        self.logger.log_eod_summary('SETTLEMENT', day_completed - internal_done + external_done,
+                                     day_failed, day_volume)
+        for bank in BANKS:
+            self.logger.log_eod_summary(f'{bank}_INTERNAL', day_completed, day_failed, day_volume)
+
+    def _run_verification(self, day_num: int):
+        """Run cross-node integrity verification."""
+        print(f"\n  -- Integrity Verification (Day {day_num}) --")
+        verifier = CrossNodeVerifier(data_dir=self.data_dir)
+        report = verifier.verify_all()
+        verifier.close()
+
+        chains_ok = "OK" if report.all_chains_intact else "BROKEN"
+        settlements_ok = "OK" if report.all_settlements_matched else "MISMATCH"
+        print(f"  Chains: {chains_ok}  Settlements: {settlements_ok} "
+              f"({report.settlements_checked} checked, {report.verification_time_ms:.0f}ms)")
+        if report.anomalies:
+            # Distinguish balance drift (expected from internal activity) from real anomalies
+            for a in report.anomalies[:5]:
+                if 'balance' in a.lower() or 'drift' in a.lower() or 'mismatch' in a.lower():
+                    print(f"  ~ {a[:70]} (expected — internal activity)")
+                else:
+                    print(f"  ! {a[:70]}")
+
+    def _print_final_summary(self):
+        """Print final simulation summary."""
+        print(f"\n{'=' * 66}")
+        print(f"  SIMULATION COMPLETE")
+        print(f"  {self.days_run} days | {self.total_completed} completed | "
+              f"{self.total_failed} failed | ${self.total_volume:,.2f} total volume")
+        print(f"  Internal: {self.total_internal} | External: {self.total_external}")
+        if self.output_dir:
+            print(f"  Logs: {self.output_dir}/")
+        print(f"{'=' * 66}")
+
+    def run(self, days: Optional[int] = None):
+        """
+        Run the simulation.
+
+        Args:
+            days: Number of days to simulate, or None for continuous mode.
+        """
+        # Load account data
+        self._load_accounts()
+
+        # Set up graceful shutdown
+        original_sigint = signal.getsignal(signal.SIGINT)
+
+        def handle_sigint(signum, frame):
+            self._stopped = True
+            print("\n\n  Ctrl+C received -- finishing current day...")
+
+        signal.signal(signal.SIGINT, handle_sigint)
+
+        sim_date = datetime.now().replace(hour=8, minute=0, second=0, microsecond=0)
+        day_num = 0
+
+        try:
+            while not self._stopped:
+                day_num += 1
+                if days is not None and day_num > days:
+                    break
+
+                self._run_day(day_num, sim_date)
+
+                # Periodic verification
+                if self.verify_every > 0 and day_num % self.verify_every == 0:
+                    self._run_verification(day_num)
+
+                # Periodic reconciliation (every 30 days)
+                if day_num % 30 == 0:
+                    self._run_reconciliation(day_num)
+
+                sim_date += timedelta(days=1)
+                # Skip weekends
+                while sim_date.weekday() >= 5:
+                    sim_date += timedelta(days=1)
+
+        finally:
+            signal.signal(signal.SIGINT, original_sigint)
+            self._print_final_summary()
+            self.logger.close()

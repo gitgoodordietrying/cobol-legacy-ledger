@@ -1,10 +1,11 @@
 # COBOL Known Issues
 
-**System**: cobol-legacy-ledger Phase 1
-**Version**: 1.0.0
-**Last Updated**: 2026-02-17
+**System**: cobol-legacy-ledger Phase 1+2
+**Version**: 2.0.0
+**Last Updated**: 2026-02-23
 
 All bugs are documented as-is (not fixed). This reflects authentic legacy COBOL behavior.
+Issues marked [RESOLVED] were fixed in the Phase 2 quality hardening milestone.
 
 ---
 
@@ -36,22 +37,27 @@ All bugs are documented as-is (not fixed). This reflects authentic legacy COBOL 
 
 ## TRANSACT.cob Issues
 
-### T1–T9: Debug TRACE Lines
+### [RESOLVED] T-R1: Hardcoded Dates
 
-**What**: Multiple `DISPLAY 'TRACE|...'` lines remain in the PROCEDURE DIVISION, outputting during normal operations.
+**What**: Transaction records used hardcoded `20260217` for date and `101530` for time.
 
-**Example**:
-```
-TRACE|PERFORM PROCESS-DEPOSIT
-TRACE|MOVE 3200.00 TO TRANS-AMOUNT
-TRACE|ADD TRANS-AMOUNT TO ACCT-BALANCE
-```
+**Fix**: Replaced with `ACCEPT WS-CURRENT-DATE FROM DATE YYYYMMDD` and `ACCEPT WS-CURRENT-TIME FROM TIME` in Phase 2 quality hardening.
 
-**Why**: Left in from development. Removing would require recompilation in production.
+---
 
-**Risk**: Makes stdout noisy. Python bridge must parse TRACE lines out of output stream.
+### [RESOLVED] T-R2: Self-Assignment Dead Code
 
-**Production Fix**: Remove TRACE lines before production deployment. Implement proper logging instead.
+**What**: Line 284 had `MOVE WS-IN-ACCT-ID TO WS-IN-ACCT-ID` (noop).
+
+**Fix**: Removed in Phase 2 quality hardening.
+
+---
+
+### [RESOLVED] T-R3: Hardcoded Node in Batch Header
+
+**What**: Batch processing header displayed `NODE: BANK_A` regardless of which node was running.
+
+**Fix**: Now derives node code from loaded account IDs, displaying correct bank identifier.
 
 ---
 
@@ -67,38 +73,68 @@ TRACE|ADD TRANS-AMOUNT TO ACCT-BALANCE
 
 ---
 
-### T11: Negative Balance Floor
+### [RESOLVED] T11: Negative Balance Floor
 
-**What**: `BATCH-FEE` subtracts a fee from an account balance without checking if it goes negative.
+**What**: Fee deductions could drive account balance negative.
 
-```cobol
-SUBTRACT WS-IN-AMOUNT FROM WS-A-BAL(WS-FOUND-IDX)
-```
-
-**Why**: Original design allowed overdraft fees to drive balance negative (intentional or oversight — unclear).
-
-**Risk**: Account balance can go negative. Customer sees "-$50.00" after fee.
-
-**Production Fix**: Check balance >= fee amount before deducting. Return error code '01' (NSF) if insufficient.
+**Fix**: FEES.cob implements balance floor protection — fees are skipped if they would cause a negative balance.
 
 ---
 
 ### T12: Account ID Clobbered During TRANSFER
 
-**What**: In `BATCH-TRANSFER`, when looking up the target account, the code overwrites the source account ID:
+**What**: In `PROCESS-TRANSFER`, when looking up the target account, the code overwrites the source account ID:
 
 ```cobol
 MOVE WS-IN-TARGET-ID TO WS-IN-ACCT-ID
 PERFORM FIND-ACCOUNT
 ```
 
-Then later restores it. This pattern is fragile.
+Then uses the source index saved earlier. This pattern is fragile.
 
 **Why**: Memory constraints in 1970s-80s COBOL encouraged variable reuse.
 
-**Risk**: If code is refactored and the restore line is deleted, source account becomes corrupted. Subtle bugs.
+**Risk**: If code is refactored and the index save is deleted, source account becomes corrupted.
 
 **Production Fix**: Use separate variables (WS-SOURCE-ID, WS-TARGET-ID). Never reuse.
+
+---
+
+## REPORTS.cob Issues
+
+### [RESOLVED] R-R1: Nested IF Chain for Status Codes
+
+**What**: PRINT-EOD used 5-deep nested `IF/ELSE IF/END-IF` chain for transaction status counting.
+
+**Fix**: Replaced with `EVALUATE TRANS-STATUS` block in Phase 2 quality hardening.
+
+---
+
+## INTEREST.cob Issues (Phase 2 — New)
+
+### I1: Interest Not Compounded
+
+**What**: Interest is calculated on the current balance, not on a compounding basis. If run multiple times in a month, interest is applied to the already-increased balance.
+
+**Why**: Monthly batch assumption — designed to run exactly once per month.
+
+**Risk**: Low. Simulation controls execution frequency.
+
+**Production Fix**: Track last interest accrual date per account and prevent double-posting.
+
+---
+
+## RECONCILE.cob Issues (Phase 2 — New)
+
+### R1: No Persisted Opening Balances
+
+**What**: Reconciliation cannot fully verify balance changes because opening balances (at seed time) are not stored separately. Current implementation verifies transaction log internal consistency.
+
+**Why**: Would require an additional file or database column for seed/opening balances.
+
+**Risk**: Cannot detect silent balance corruption that occurred before the first transaction.
+
+**Production Fix**: Store opening balance at account creation time and use for full reconciliation.
 
 ---
 
@@ -116,52 +152,24 @@ Then later restores it. This pattern is fragile.
 
 ---
 
-### P2: TRACE Line Parsing
+## Scope Limitations (Phase 1-2)
 
-**What**: Bridge must filter out `TRACE|...` lines from COBOL stdout. If TRACE output is parsed as a transaction record, bad data enters SQLite.
+### C1: No Multi-User Concurrent Access
 
-**Why**: TRACE lines left in production COBOL.
+Demonstration context. Single operator, sequential batch.
 
-**Risk**: Noise in output stream if parser doesn't filter.
+### C2: No Daily Limit Persistence
 
-**Production Fix**: Bridge includes line filter (ignore lines starting with TRACE|).
+Daily withdrawal limit resets per TRANSACT run. Would require additional infrastructure.
 
----
+### C3: No Encrypted Data at Rest
 
-## Scope Limitations (Phase 1)
-
-### C1: No Cross-Node Settlement (Phase 2)
-
-**What**: Phase 1 runs each node independently. No inter-bank settlement coordinator.
-
-**Why**: Phase 2 feature.
-
-**Risk**: None for Phase 1. By design.
-
----
-
-### C2: No Daily Limit Persistence (Phase 2)
-
-**What**: Daily withdrawal limit resets per TRANSACT run.
-
-**Why**: Would require additional infrastructure (daily limit file or DB table).
-
-**Risk**: Customers can exceed intended daily limits if TRANSACT is called multiple times.
-
----
-
-### C3: No Netting or Position Reports (Phase 2)
-
-**What**: Phase 1 records transactions. Phase 2 calculates settlement positions.
-
-**Why**: Requires cross-node verification.
-
-**Risk**: None for Phase 1. Demo is single-node transfers.
+.DAT files are plaintext. The integrity chain detects tampering but does not prevent reading.
 
 ---
 
 ## How to Use This Document
 
-1. **For interviewers**: "Here's what I documented from v1. These aren't secret — they're authentic COBOL patterns."
-2. **For Phase 2 planning**: These become requirements for the Python coordinator.
+1. **For interviewers**: "Here's what I documented from v1+v2. These aren't secret — they're authentic COBOL patterns."
+2. **For Phase 3 planning**: These become requirements for the Python coordinator.
 3. **For auditors**: "We know about these. Here's why they exist and the production fix for each."

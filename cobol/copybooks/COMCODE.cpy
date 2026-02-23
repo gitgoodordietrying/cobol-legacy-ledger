@@ -22,6 +22,11 @@
      05  ACCT-CHECKING        PIC X(1) VALUE 'C'.
      05  ACCT-SAVINGS         PIC X(1) VALUE 'S'.
 
+ 01  ACCOUNT-STATUSES.
+     05  STATUS-ACTIVE        PIC X(1) VALUE 'A'.
+     05  STATUS-CLOSED        PIC X(1) VALUE 'C'.
+     05  STATUS-FROZEN        PIC X(1) VALUE 'F'.
+
  01  TX-TYPES.
      05  TX-DEPOSIT           PIC X(1) VALUE 'D'.
      05  TX-WITHDRAW          PIC X(1) VALUE 'W'.

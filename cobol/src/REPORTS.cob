@@ -1,9 +1,53 @@
-      *> ================================================================
-      *> REPORTS.cob — Reporting and Reconciliation
-      *> System: cobol-legacy-ledger | Purpose: Generate reports
-      *> Operations: STATEMENT, LEDGER, EOD, AUDIT
-      *> Output Format: Pipe-delimited to STDOUT
-      *> ================================================================
+      *>================================================================*
+      *>  Program:     REPORTS.cob
+      *>  System:      LEGACY LEDGER — Reporting and Reconciliation
+      *>  Node:        All (same binary, per-node data directories)
+      *>  Author:      AKD Solutions
+      *>  Written:     2026-02-17
+      *>  Modified:    2026-02-23
+      *>
+      *>  Purpose:
+      *>    Read-only reporting on account and transaction data.
+      *>    Generates ledger summaries, account statements, end-of-day
+      *>    reconciliation reports, and full audit trails. No file
+      *>    modifications — all output is to STDOUT.
+      *>
+      *>  Operations (via command-line argument):
+      *>    LEDGER    — All accounts with balance totals by type
+      *>    STATEMENT — Transaction history for a single account
+      *>    EOD       — End-of-day summary with transaction stats
+      *>    AUDIT     — Full transaction ledger for audit review
+      *>
+      *>  Files:
+      *>    Input: ACCOUNTS.DAT  (LINE SEQUENTIAL, 70-byte records)
+      *>    Input: TRANSACT.DAT  (LINE SEQUENTIAL, 103-byte records)
+      *>
+      *>  Copybooks:
+      *>    ACCTREC.cpy   — Account record layout (70 bytes)
+      *>    TRANSREC.cpy  — Transaction record layout (103 bytes)
+      *>    COMCODE.cpy   — Shared status codes and bank identifiers
+      *>
+      *>  Output Format (to STDOUT, pipe-delimited):
+      *>    Ledger:    ACCOUNT|id|name|type|balance|status|opened|lastact
+      *>    Statement: TRANS|id|type|amount|date|time|desc|status
+      *>    EOD:       SUMMARY|label|value  +  STATS|category|count
+      *>    Audit:     TRANS|id|acct|type|amount|date|time|desc|status|batch
+      *>    Result:    RESULT|XX  (where XX = status code)
+      *>
+      *>  Exit Codes:
+      *>    RESULT|00 — Report generated successfully
+      *>    RESULT|99 — Invalid operation or file I/O error
+      *>
+      *>  Dependencies:
+      *>    Requires ACCOUNTS.DAT and/or TRANSACT.DAT in CWD.
+      *>    Read-only operations — no file modifications.
+      *>
+      *>  Change Log:
+      *>    2026-02-17  AKD  Initial implementation — Phase 1
+      *>    2026-02-23  AKD  Production headers, file status checks,
+      *>                     EVALUATE refactoring for status codes
+      *>
+      *>================================================================*
        IDENTIFICATION DIVISION.
        PROGRAM-ID. REPORTS.
 
@@ -65,6 +109,11 @@
        PRINT-LEDGER.
            DISPLAY "LEDGER|ACCOUNT DETAIL"
            OPEN INPUT ACCOUNTS-FILE
+           IF WS-FILE-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-FILE-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ ACCOUNTS-FILE
                    AT END
@@ -78,11 +127,12 @@
                    ACCT-LAST-ACTIVITY
                ADD 1 TO WS-ACCOUNT-COUNT
                ADD ACCT-BALANCE TO WS-TOTAL-BALANCE
-               IF ACCT-TYPE = 'C'
-                   ADD ACCT-BALANCE TO WS-CHECKING-BALANCE
-               ELSE
-                   ADD ACCT-BALANCE TO WS-SAVINGS-BALANCE
-               END-IF
+               EVALUATE ACCT-TYPE
+                   WHEN 'C'
+                       ADD ACCT-BALANCE TO WS-CHECKING-BALANCE
+                   WHEN 'S'
+                       ADD ACCT-BALANCE TO WS-SAVINGS-BALANCE
+               END-EVALUATE
            END-PERFORM
            DISPLAY "SUMMARY|TOTAL-BALANCE|" WS-TOTAL-BALANCE
                "|ACCOUNTS|" WS-ACCOUNT-COUNT
@@ -93,6 +143,11 @@
        PRINT-STATEMENT.
            DISPLAY "STATEMENT|ACCOUNT|" WS-IN-ACCT-ID
            OPEN INPUT TRANSACT-FILE
+           IF WS-TX-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-TX-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ TRANSACT-FILE
                    AT END
@@ -111,6 +166,11 @@
        PRINT-EOD.
            DISPLAY "EOD|END-OF-DAY RECONCILIATION"
            OPEN INPUT ACCOUNTS-FILE
+           IF WS-FILE-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-FILE-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ ACCOUNTS-FILE
                    AT END
@@ -118,37 +178,40 @@
                        EXIT PERFORM
                END-READ
                ADD ACCT-BALANCE TO WS-TOTAL-BALANCE
-               IF ACCT-TYPE = 'C'
-                   ADD ACCT-BALANCE TO WS-CHECKING-BALANCE
-               ELSE
-                   ADD ACCT-BALANCE TO WS-SAVINGS-BALANCE
-               END-IF
+               EVALUATE ACCT-TYPE
+                   WHEN 'C'
+                       ADD ACCT-BALANCE TO WS-CHECKING-BALANCE
+                   WHEN 'S'
+                       ADD ACCT-BALANCE TO WS-SAVINGS-BALANCE
+               END-EVALUATE
            END-PERFORM
            DISPLAY "SUMMARY|TOTAL-BALANCE|" WS-TOTAL-BALANCE
            DISPLAY "SUMMARY|CHECKING-BALANCE|" WS-CHECKING-BALANCE
            DISPLAY "SUMMARY|SAVINGS-BALANCE|" WS-SAVINGS-BALANCE
            OPEN INPUT TRANSACT-FILE
+           IF WS-TX-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-TX-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ TRANSACT-FILE
                    AT END
                        CLOSE TRANSACT-FILE
                        EXIT PERFORM
                END-READ
-               IF TRANS-STATUS = '00'
-                   ADD 1 TO WS-TX-SUCCESS-COUNT
-               ELSE IF TRANS-STATUS = '01'
-                   ADD 1 TO WS-TX-NSF-COUNT
-               ELSE IF TRANS-STATUS = '02'
-                   ADD 1 TO WS-TX-LIMIT-COUNT
-               ELSE IF TRANS-STATUS = '03'
-                   ADD 1 TO WS-TX-BADACCT-COUNT
-               ELSE IF TRANS-STATUS = '04'
-                   ADD 1 TO WS-TX-FROZEN-COUNT
-               END-IF
-               END-IF
-               END-IF
-               END-IF
-               END-IF
+               EVALUATE TRANS-STATUS
+                   WHEN '00'
+                       ADD 1 TO WS-TX-SUCCESS-COUNT
+                   WHEN '01'
+                       ADD 1 TO WS-TX-NSF-COUNT
+                   WHEN '02'
+                       ADD 1 TO WS-TX-LIMIT-COUNT
+                   WHEN '03'
+                       ADD 1 TO WS-TX-BADACCT-COUNT
+                   WHEN '04'
+                       ADD 1 TO WS-TX-FROZEN-COUNT
+               END-EVALUATE
            END-PERFORM
            DISPLAY "STATS|SUCCESS|" WS-TX-SUCCESS-COUNT
            DISPLAY "STATS|NSF|" WS-TX-NSF-COUNT
@@ -160,6 +223,11 @@
        PRINT-AUDIT.
            DISPLAY "AUDIT|TRANSACTION LEDGER"
            OPEN INPUT TRANSACT-FILE
+           IF WS-TX-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-TX-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ TRANSACT-FILE
                    AT END

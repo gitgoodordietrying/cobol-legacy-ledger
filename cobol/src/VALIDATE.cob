@@ -1,9 +1,49 @@
-      *> ================================================================
-      *> VALIDATE.cob — Business Rules & Validation
-      *> System: cobol-legacy-ledger | Purpose: Validate transactions
-      *> Operations: CHECK-BALANCE, CHECK-LIMIT, CHECK-STATUS
-      *> Output Format: RESULT|{RC} to STDOUT
-      *> ================================================================
+      *>================================================================*
+      *>  Program:     VALIDATE.cob
+      *>  System:      LEGACY LEDGER — Business Rules & Validation
+      *>  Node:        All (same binary, per-node data directories)
+      *>  Author:      AKD Solutions
+      *>  Written:     2026-02-17
+      *>  Modified:    2026-02-23
+      *>
+      *>  Purpose:
+      *>    Pre-transaction validation of business rules. Checks
+      *>    account existence, account status (active/frozen), balance
+      *>    sufficiency, and daily withdrawal limits. Called by the
+      *>    Python bridge before debit operations.
+      *>
+      *>  Operations:
+      *>    Single validation pass: account_id + amount via CLI args
+      *>    Sequence: exists → active → balance → daily limit
+      *>
+      *>  Files:
+      *>    Input: ACCOUNTS.DAT (LINE SEQUENTIAL, 70-byte records)
+      *>
+      *>  Copybooks:
+      *>    ACCTREC.cpy  — Account record layout (70 bytes)
+      *>    COMCODE.cpy  — Shared status codes and bank identifiers
+      *>    ACCTIO.cpy   — Shared account I/O paragraphs
+      *>
+      *>  Output Format (to STDOUT):
+      *>    Result: RESULT|XX  (where XX = status code)
+      *>
+      *>  Exit Codes:
+      *>    RESULT|00 — All checks pass
+      *>    RESULT|01 — Insufficient funds
+      *>    RESULT|02 — Daily limit exceeded
+      *>    RESULT|03 — Account not found
+      *>    RESULT|04 — Account frozen
+      *>
+      *>  Dependencies:
+      *>    Requires ACCOUNTS.DAT in CWD. Read-only — does not
+      *>    modify any files.
+      *>
+      *>  Change Log:
+      *>    2026-02-17  AKD  Initial implementation — Phase 1
+      *>    2026-02-23  AKD  Production headers, file status checks,
+      *>                     copybook extraction
+      *>
+      *>================================================================*
        IDENTIFICATION DIVISION.
        PROGRAM-ID. VALIDATE.
 
@@ -27,19 +67,7 @@
        01  WS-IN-AMOUNT           PIC S9(10)V99 VALUE 0.
        01  WS-IN-AMOUNT-STR       PIC X(20) VALUE SPACES.
        01  WS-RESULT-CODE         PIC X(2) VALUE '00'.
-       01  WS-FOUND-FLAG          PIC X VALUE 'N'.
-       01  WS-FOUND-IDX           PIC 9(3) VALUE 0.
-       01  WS-ACCOUNT-COUNT       PIC 9(3) VALUE 0.
-       01  WS-ACCT-IDX            PIC 9(3) VALUE 0.
-       01  WS-ACCOUNT-TABLE.
-           05  WS-ACCT-ENTRY OCCURS 100 TIMES.
-               10  WS-A-ID        PIC X(10).
-               10  WS-A-NAME      PIC X(30).
-               10  WS-A-TYPE      PIC X(1).
-               10  WS-A-BALANCE   PIC S9(10)V99.
-               10  WS-A-STATUS    PIC X(1).
-               10  WS-A-OPEN      PIC 9(8).
-               10  WS-A-ACTIVITY  PIC 9(8).
+       COPY "ACCTIO.cpy".
        01  WS-DAILY-LIMIT         PIC 9(10)V99 VALUE 50000.00.
        COPY "COMCODE.cpy".
 
@@ -92,6 +120,11 @@
        LOAD-ALL-ACCOUNTS.
            MOVE 0 TO WS-ACCOUNT-COUNT
            OPEN INPUT ACCOUNTS-FILE
+           IF WS-FILE-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-FILE-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ ACCOUNTS-FILE
                    AT END
