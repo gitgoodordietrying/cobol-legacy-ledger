@@ -1,10 +1,58 @@
-      *> ================================================================
-      *> TRANSACT.cob — Transaction Processing Engine
-      *> System: cobol-legacy-ledger | Purpose: Process deposits, withdrawals, transfers
-      *> Operations: DEPOSIT, WITHDRAW, TRANSFER, BATCH
-      *> Files: ACCOUNTS.DAT, TRANSACT.DAT, BATCH-INPUT.DAT
-      *> Output Format: Pipe-delimited to STDOUT
-      *> ================================================================
+      *>================================================================*
+      *>  Program:     TRANSACT.cob
+      *>  System:      LEGACY LEDGER — Transaction Processing Engine
+      *>  Node:        All (same binary, per-node data directories)
+      *>  Author:      AKD Solutions
+      *>  Written:     2026-02-17
+      *>  Modified:    2026-02-23
+      *>
+      *>  Purpose:
+      *>    Core transaction engine for deposits, withdrawals,
+      *>    transfers, and batch processing. Validates business rules,
+      *>    updates account balances, and writes transaction records
+      *>    to the TRANSACT.DAT sequential log file.
+      *>
+      *>  Operations (via command-line argument):
+      *>    DEPOSIT   — Credit funds to an account
+      *>    WITHDRAW  — Debit funds with NSF + limit checks
+      *>    TRANSFER  — Move funds between two accounts
+      *>    BATCH     — Process pipe-delimited batch input file
+      *>
+      *>  Files:
+      *>    Input/Output: ACCOUNTS.DAT  (LINE SEQUENTIAL, 70-byte)
+      *>    Output:       TRANSACT.DAT  (LINE SEQUENTIAL, 103-byte)
+      *>    Input:        BATCH-INPUT.DAT (pipe-delimited batch)
+      *>
+      *>  Copybooks:
+      *>    ACCTREC.cpy   — Account record layout (70 bytes)
+      *>    TRANSREC.cpy  — Transaction record layout (103 bytes)
+      *>    COMCODE.cpy   — Shared status codes and bank identifiers
+      *>    ACCTIO.cpy    — Shared account I/O paragraphs
+      *>
+      *>  Output Format (to STDOUT, pipe-delimited):
+      *>    Success: OK|TYPE|TX-ID|ACCT-ID|NEW-BALANCE
+      *>    Batch:   Columnar trace (see Supplement A)
+      *>    Result:  RESULT|XX  (where XX = status code)
+      *>
+      *>  Exit Codes:
+      *>    RESULT|00 — Success
+      *>    RESULT|01 — Insufficient funds (NSF)
+      *>    RESULT|02 — Daily limit exceeded
+      *>    RESULT|03 — Invalid account
+      *>    RESULT|04 — Account frozen
+      *>    RESULT|99 — File I/O or system error
+      *>
+      *>  Dependencies:
+      *>    Requires ACCOUNTS.DAT in CWD. TRANSACT.DAT created/appended
+      *>    automatically. BATCH-INPUT.DAT required for BATCH operation.
+      *>
+      *>  Change Log:
+      *>    2026-02-17  AKD  Initial implementation — Phase 1
+      *>    2026-02-23  AKD  Production headers, dynamic dates,
+      *>                     file status checks, dead code removal,
+      *>                     copybook extraction, parameterized node
+      *>
+      *>================================================================*
        IDENTIFICATION DIVISION.
        PROGRAM-ID. TRANSACT.
 
@@ -48,19 +96,7 @@
        01  WS-TX-ID-NUM           PIC 9(6) VALUE 0.
        01  WS-NODE-CODE           PIC X(1) VALUE 'A'.
        01  WS-RESULT-CODE         PIC X(2) VALUE '00'.
-       01  WS-FOUND-FLAG          PIC X VALUE 'N'.
-       01  WS-FOUND-IDX           PIC 9(3) VALUE 0.
-       01  WS-ACCOUNT-COUNT       PIC 9(3) VALUE 0.
-       01  WS-ACCT-IDX            PIC 9(3) VALUE 0.
-       01  WS-ACCOUNT-TABLE.
-           05  WS-ACCT-ENTRY OCCURS 100 TIMES.
-               10  WS-A-ID        PIC X(10).
-               10  WS-A-NAME      PIC X(30).
-               10  WS-A-TYPE      PIC X(1).
-               10  WS-A-BALANCE   PIC S9(10)V99.
-               10  WS-A-STATUS    PIC X(1).
-               10  WS-A-OPEN      PIC 9(8).
-               10  WS-A-ACTIVITY  PIC 9(8).
+       COPY "ACCTIO.cpy".
        01  WS-BATCH-SEQ           PIC 9(3) VALUE 0.
        01  WS-BATCH-SUCCESS       PIC 9(5) VALUE 0.
        01  WS-BATCH-FAILED        PIC 9(5) VALUE 0.
@@ -81,11 +117,15 @@
            05  WS-BP-AMOUNT       PIC 9(10)V99.
            05  WS-BP-DESC         PIC X(40).
            05  WS-BP-TARGET       PIC X(10).
+       01  WS-CURRENT-DATE        PIC 9(8) VALUE 0.
+       01  WS-CURRENT-TIME        PIC 9(6) VALUE 0.
        01  WS-DAILY-LIMIT         PIC 9(10)V99 VALUE 50000.00.
        COPY "COMCODE.cpy".
 
        PROCEDURE DIVISION.
        MAIN-PROGRAM.
+           ACCEPT WS-CURRENT-DATE FROM DATE YYYYMMDD
+           ACCEPT WS-CURRENT-TIME FROM TIME
            ACCEPT WS-BATCH-LINE FROM COMMAND-LINE
 
            *> Extract operation keyword and all fields (first word)
@@ -162,6 +202,11 @@
        LOAD-ALL-ACCOUNTS.
            MOVE 0 TO WS-ACCOUNT-COUNT
            OPEN INPUT ACCOUNTS-FILE
+           IF WS-FILE-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-FILE-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ ACCOUNTS-FILE
                    AT END
@@ -180,6 +225,11 @@
 
        SAVE-ALL-ACCOUNTS.
            OPEN OUTPUT ACCOUNTS-FILE
+           IF WS-FILE-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-FILE-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM VARYING WS-ACCT-IDX FROM 1 BY 1
                UNTIL WS-ACCT-IDX > WS-ACCOUNT-COUNT
                MOVE WS-A-ID(WS-ACCT-IDX) TO ACCT-ID
@@ -210,12 +260,17 @@
            MOVE WS-IN-ACCT-ID TO TRANS-ACCT-ID
            MOVE WS-IN-TYPE TO TRANS-TYPE
            MOVE WS-IN-AMOUNT TO TRANS-AMOUNT
-           MOVE 20260217 TO TRANS-DATE
-           MOVE 101530 TO TRANS-TIME
+           MOVE WS-CURRENT-DATE TO TRANS-DATE
+           MOVE WS-CURRENT-TIME TO TRANS-TIME
            MOVE WS-IN-DESC TO TRANS-DESC
            MOVE WS-RESULT-CODE TO TRANS-STATUS
            MOVE SPACES TO TRANS-BATCH-ID
            OPEN EXTEND TRANSACT-FILE
+           IF WS-TX-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-TX-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            WRITE TRANSACTION-RECORD
            CLOSE TRANSACT-FILE.
 
@@ -281,7 +336,6 @@
 
        PROCESS-TRANSFER.
            PERFORM LOAD-ALL-ACCOUNTS
-           MOVE WS-IN-ACCT-ID TO WS-IN-ACCT-ID
            PERFORM FIND-ACCOUNT
            IF WS-FOUND-FLAG = 'N'
                MOVE RC-INVALID-ACCT TO WS-RESULT-CODE
@@ -320,10 +374,15 @@
            DISPLAY "RESULT|00".
 
        PROCESS-BATCH.
+           PERFORM LOAD-ALL-ACCOUNTS
+           IF WS-ACCOUNT-COUNT > 0
+               MOVE WS-A-ID(1)(5:1) TO WS-NODE-CODE
+           END-IF
            DISPLAY "========================================"
            DISPLAY "  LEGACY LEDGER — BATCH PROCESSING LOG"
-           DISPLAY "  NODE: BANK_A — FIRST NATIONAL BANK"
-           DISPLAY "  DATE: 2026-02-17  TIME: 10:15:30"
+           DISPLAY "  NODE: BANK_" WS-NODE-CODE
+           DISPLAY "  DATE: " WS-CURRENT-DATE
+               "  TIME: " WS-CURRENT-TIME
            DISPLAY "  INPUT: BATCH-INPUT.DAT"
            DISPLAY "========================================"
            DISPLAY ""
@@ -334,8 +393,12 @@
            DISPLAY "---  ------  ----  -----------   ----------  "
                "-------------  --------------------------------"
 
-           PERFORM LOAD-ALL-ACCOUNTS
            OPEN INPUT BATCH-FILE
+           IF WS-BATCH-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-BATCH-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ BATCH-FILE
                    AT END

@@ -1,10 +1,55 @@
-      *> ================================================================
-      *> ACCOUNTS.cob — Account Lifecycle Management
-      *> System: cobol-legacy-ledger | Node: BANK_{node} | Purpose: Account CRUD operations
-      *> Operations: CREATE, READ, UPDATE, CLOSE, LIST
-      *> Files: ACCOUNTS.DAT (input/output)
-      *> Output Format: Pipe-delimited to STDOUT
-      *> ================================================================
+      *>================================================================*
+      *>  Program:     ACCOUNTS.cob
+      *>  System:      LEGACY LEDGER — Account Lifecycle Management
+      *>  Node:        All (same binary, per-node data directories)
+      *>  Author:      AKD Solutions
+      *>  Written:     2026-02-17
+      *>  Modified:    2026-02-23
+      *>
+      *>  Purpose:
+      *>    Account master file CRUD operations. Creates, reads,
+      *>    updates, and lists customer and nostro accounts stored
+      *>    in the node's ACCOUNTS.DAT sequential file.
+      *>
+      *>  Operations (via command-line argument):
+      *>    CREATE  — Add new account to master file
+      *>    READ    — Display single account by ID
+      *>    LIST    — Display all active accounts
+      *>    UPDATE  — Modify account status
+      *>    CLOSE   — Set account status to 'C' (closed)
+      *>
+      *>  Files:
+      *>    Input/Output: ACCOUNTS.DAT (LINE SEQUENTIAL, 70-byte records)
+      *>
+      *>  Copybooks:
+      *>    ACCTREC.cpy  — Account record layout (70 bytes)
+      *>    COMCODE.cpy  — Shared status codes and bank identifiers
+      *>    ACCTIO.cpy   — Shared account I/O paragraphs
+      *>
+      *>  Output Format (to STDOUT, pipe-delimited):
+      *>    Account: ACCOUNT|ACCT-ID|NAME|TYPE|BALANCE|STATUS|OPENED|LASTACT
+      *>    Created: ACCOUNT-CREATED|ACCT-ID
+      *>    Updated: ACCOUNT-UPDATED|ACCT-ID
+      *>    Closed:  ACCOUNT-CLOSED|ACCT-ID
+      *>    Result:  RESULT|XX  (where XX = status code from COMCODE.cpy)
+      *>
+      *>  Exit Codes:
+      *>    RESULT|00 — Success
+      *>    RESULT|03 — Account not found (or duplicate on CREATE)
+      *>    RESULT|99 — Invalid operation or file I/O error
+      *>
+      *>  Dependencies:
+      *>    Requires ACCOUNTS.DAT to exist in CWD (working directory).
+      *>    CWD is set by the Python bridge to banks/{NODE}/.
+      *>    If file does not exist, returns RESULT|99 on READ/LIST,
+      *>    or creates it on first CREATE.
+      *>
+      *>  Change Log:
+      *>    2026-02-17  AKD  Initial implementation — Phase 1
+      *>    2026-02-23  AKD  Production headers, dynamic dates,
+      *>                     file status checks, copybook extraction
+      *>
+      *>================================================================*
        IDENTIFICATION DIVISION.
        PROGRAM-ID. ACCOUNTS.
 
@@ -28,23 +73,15 @@
        01  WS-IN-NAME             PIC X(30) VALUE SPACES.
        01  WS-IN-TYPE             PIC X(1) VALUE 'C'.
        01  WS-IN-STATUS           PIC X(1) VALUE 'A'.
-       01  WS-FOUND-FLAG          PIC X VALUE 'N'.
-       01  WS-FOUND-IDX           PIC 9(3) VALUE 0.
-       01  WS-ACCOUNT-COUNT       PIC 9(3) VALUE 0.
-       01  WS-ACCT-IDX            PIC 9(3) VALUE 0.
-       01  WS-ACCOUNT-TABLE.
-           05  WS-ACCT-ENTRY OCCURS 100 TIMES.
-               10  WS-A-ID        PIC X(10).
-               10  WS-A-NAME      PIC X(30).
-               10  WS-A-TYPE      PIC X(1).
-               10  WS-A-BALANCE   PIC S9(10)V99.
-               10  WS-A-STATUS    PIC X(1).
-               10  WS-A-OPEN      PIC 9(8).
-               10  WS-A-ACTIVITY  PIC 9(8).
+       01  WS-CURRENT-DATE        PIC 9(8) VALUE 0.
+       01  WS-CURRENT-TIME        PIC 9(6) VALUE 0.
+       COPY "ACCTIO.cpy".
        COPY "COMCODE.cpy".
 
        PROCEDURE DIVISION.
        MAIN-PROGRAM.
+           ACCEPT WS-CURRENT-DATE FROM DATE YYYYMMDD
+           ACCEPT WS-CURRENT-TIME FROM TIME
            ACCEPT WS-OPERATION FROM COMMAND-LINE
 
            EVALUATE WS-OPERATION
@@ -73,6 +110,11 @@
 
        LIST-ACCOUNTS.
            OPEN INPUT ACCOUNTS-FILE
+           IF WS-FILE-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-FILE-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ ACCOUNTS-FILE
                    AT END
@@ -93,6 +135,11 @@
        LOAD-ALL-ACCOUNTS.
            MOVE 0 TO WS-ACCOUNT-COUNT
            OPEN INPUT ACCOUNTS-FILE
+           IF WS-FILE-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-FILE-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM UNTIL 1 = 0
                READ ACCOUNTS-FILE
                    AT END
@@ -111,6 +158,11 @@
 
        WRITE-ALL-ACCOUNTS.
            OPEN OUTPUT ACCOUNTS-FILE
+           IF WS-FILE-STATUS NOT = '00'
+               DISPLAY "ERROR|FILE-OPEN|" WS-FILE-STATUS
+               DISPLAY "RESULT|99"
+               STOP RUN
+           END-IF
            PERFORM VARYING WS-ACCT-IDX FROM 1 BY 1
                UNTIL WS-ACCT-IDX > WS-ACCOUNT-COUNT
                MOVE WS-A-ID(WS-ACCT-IDX) TO ACCT-ID
@@ -149,8 +201,8 @@
            MOVE WS-IN-TYPE TO WS-A-TYPE(WS-ACCOUNT-COUNT)
            MOVE 0 TO WS-A-BALANCE(WS-ACCOUNT-COUNT)
            MOVE 'A' TO WS-A-STATUS(WS-ACCOUNT-COUNT)
-           MOVE 20260217 TO WS-A-OPEN(WS-ACCOUNT-COUNT)
-           MOVE 20260217 TO WS-A-ACTIVITY(WS-ACCOUNT-COUNT)
+           MOVE WS-CURRENT-DATE TO WS-A-OPEN(WS-ACCOUNT-COUNT)
+           MOVE WS-CURRENT-DATE TO WS-A-ACTIVITY(WS-ACCOUNT-COUNT)
            PERFORM WRITE-ALL-ACCOUNTS
            DISPLAY "ACCOUNT-CREATED|" WS-IN-ACCT-ID
            DISPLAY "RESULT|00".
@@ -180,7 +232,7 @@
                EXIT PARAGRAPH
            END-IF
            MOVE WS-IN-STATUS TO WS-A-STATUS(WS-FOUND-IDX)
-           MOVE 20260217 TO WS-A-ACTIVITY(WS-FOUND-IDX)
+           MOVE WS-CURRENT-DATE TO WS-A-ACTIVITY(WS-FOUND-IDX)
            PERFORM WRITE-ALL-ACCOUNTS
            DISPLAY "ACCOUNT-UPDATED|" WS-IN-ACCT-ID
            DISPLAY "RESULT|00".
@@ -193,7 +245,7 @@
                EXIT PARAGRAPH
            END-IF
            MOVE 'C' TO WS-A-STATUS(WS-FOUND-IDX)
-           MOVE 20260217 TO WS-A-ACTIVITY(WS-FOUND-IDX)
+           MOVE WS-CURRENT-DATE TO WS-A-ACTIVITY(WS-FOUND-IDX)
            PERFORM WRITE-ALL-ACCOUNTS
            DISPLAY "ACCOUNT-CLOSED|" WS-IN-ACCT-ID
            DISPLAY "RESULT|00".

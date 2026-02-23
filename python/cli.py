@@ -10,6 +10,7 @@ from .bridge import COBOLBridge
 from .auth import Role, get_auth_context
 from .settlement import SettlementCoordinator, DEMO_SETTLEMENT_BATCH
 from .cross_verify import CrossNodeVerifier, tamper_balance
+from .simulator import SimulationEngine
 
 
 @click.group()
@@ -457,6 +458,139 @@ def tamper_demo(node: str, tamper_type: str, account: str, amount: float, data_d
         click.echo("")
     except Exception as e:
         click.echo(f"   Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--days', default=None, type=int, help='Number of days to simulate (default: unlimited)')
+@click.option('--time-scale', default=3600, type=int, help='Simulated seconds per real second (default: 3600 = 1 hour/sec)')
+@click.option('--tx-per-day', default='25-100', help='Transaction range per day (default: 25-100)')
+@click.option('--verify-every', default=5, type=int, help='Run cross-node verification every N days (0=never)')
+@click.option('--seed', default=None, type=int, help='Random seed for reproducibility')
+@click.option('--output-dir', default=None, help='Log output directory (default: none)')
+@click.option('--internal-ratio', default=40, type=int, help='Percentage of internal transactions (default: 40)')
+@click.option('--monthly-events/--no-monthly-events', default=True, help='Enable interest+fee processing (default: on)')
+@click.option('--data-dir', default='banks', help='Data directory')
+def simulate(days, time_scale, tx_per_day, verify_every, seed, output_dir,
+             internal_ratio, monthly_events, data_dir):
+    """Run a two-layer banking day simulation.
+
+    Generates realistic daily banking activity across all 5 banks with two layers:
+    external inter-bank transfers (settlement) and internal intra-bank operations
+    (deposits, withdrawals, transfers, interest, fees).
+
+    Produces 6 log streams when --output-dir is specified:
+    SETTLEMENT.log + BANK_A_INTERNAL.log through BANK_E_INTERNAL.log.
+
+    Examples:
+        legacyledger simulate --days 30 --seed 42
+        legacyledger simulate --days 365 --seed 42 --output-dir logs/
+        legacyledger simulate --days 5 --internal-ratio 60 --no-monthly-events
+    """
+    # Parse tx range
+    try:
+        parts = tx_per_day.split('-')
+        tx_range = (int(parts[0]), int(parts[1]))
+    except (ValueError, IndexError):
+        click.echo(f"Error: --tx-per-day must be MIN-MAX (e.g. 25-100)", err=True)
+        sys.exit(1)
+
+    mode = f"{days} days" if days else "continuous (Ctrl+C to stop)"
+    click.echo(f"\n  Banking Day Simulator")
+    click.echo(f"  Mode: {mode} · Scale: 1s = {time_scale}s sim · TX/day: {tx_per_day}")
+    click.echo(f"  Internal: {internal_ratio}% · Monthly events: {'on' if monthly_events else 'off'}")
+    if seed is not None:
+        click.echo(f"  Seed: {seed}")
+    if output_dir:
+        click.echo(f"  Logs: {output_dir}/")
+
+    engine = SimulationEngine(
+        data_dir=data_dir,
+        time_scale=time_scale,
+        tx_range=tx_range,
+        verify_every=verify_every,
+        seed=seed,
+        output_dir=output_dir,
+        internal_ratio=internal_ratio,
+        monthly_events=monthly_events,
+    )
+    engine.run(days=days)
+
+
+@cli.command()
+@click.option('--node', required=True, help='Node identifier (e.g., BANK_A)')
+@click.option('--data-dir', default='banks', help='Data directory')
+def interest(node: str, data_dir: str):
+    """Run interest accrual batch for a node.
+
+    Posts monthly interest to all savings accounts based on tiered rates:
+    <$10K = 0.50%, $10K-$100K = 1.50%, >$100K = 2.00% APR.
+
+    Example: legacyledger interest --node BANK_A
+    """
+    bridge = COBOLBridge(node=node, data_dir=data_dir)
+    result = bridge.run_interest_batch()
+    bridge.close()
+
+    if result['status'] == '00':
+        click.echo(f"\n{node} Interest Accrual:")
+        click.echo(f"  Accounts processed: {result['accounts_processed']}")
+        click.echo(f"  Total interest:     ${result['total_interest']:.2f}")
+        click.echo(f"  Status:             OK")
+    else:
+        click.echo(f"Error: {result.get('message', 'Unknown error')}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--node', required=True, help='Node identifier (e.g., BANK_A)')
+@click.option('--data-dir', default='banks', help='Data directory')
+def fees(node: str, data_dir: str):
+    """Run fee assessment batch for a node.
+
+    Assesses monthly maintenance ($12) and low-balance ($8) fees on
+    checking accounts. Waived if balance > $5,000. Balance floor protection
+    prevents fees from causing negative balances.
+
+    Example: legacyledger fees --node BANK_A
+    """
+    bridge = COBOLBridge(node=node, data_dir=data_dir)
+    result = bridge.run_fee_batch()
+    bridge.close()
+
+    if result['status'] == '00':
+        click.echo(f"\n{node} Fee Assessment:")
+        click.echo(f"  Accounts assessed:  {result['accounts_assessed']}")
+        click.echo(f"  Total fees:         ${result['total_fees']:.2f}")
+        click.echo(f"  Status:             OK")
+    else:
+        click.echo(f"Error: {result.get('message', 'Unknown error')}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--node', required=True, help='Node identifier (e.g., BANK_A)')
+@click.option('--data-dir', default='banks', help='Data directory')
+def reconcile(node: str, data_dir: str):
+    """Run balance reconciliation for a node.
+
+    Sums all transactions by account and compares against current balances.
+    Reports MATCH or MISMATCH per account.
+
+    Example: legacyledger reconcile --node BANK_A
+    """
+    bridge = COBOLBridge(node=node, data_dir=data_dir)
+    result = bridge.run_reconciliation()
+    bridge.close()
+
+    click.echo(f"\n{node} Reconciliation:")
+    click.echo(f"  Matched:     {result['matched']}")
+    click.echo(f"  Mismatched:  {result['mismatched']}")
+    click.echo(f"  Total:       {result['total']}")
+    if result['mismatched'] == 0:
+        click.echo(f"  Status:      All accounts reconcile")
+    else:
+        click.echo(f"  Status:      {result['mismatched']} account(s) MISMATCH")
         sys.exit(1)
 
 

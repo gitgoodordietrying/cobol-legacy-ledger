@@ -70,9 +70,9 @@ class SettlementCoordinator:
 
         self._settlement_counter = 0
 
-    def _generate_settlement_ref(self) -> str:
+    def _generate_settlement_ref(self, sim_date: Optional[datetime] = None) -> str:
         """Generate unique settlement reference: STL-YYYYMMDD-NNNNNN"""
-        date_str = datetime.now().strftime('%Y%m%d')
+        date_str = (sim_date or datetime.now()).strftime('%Y%m%d')
         self._settlement_counter += 1
         return f"STL-{date_str}-{self._settlement_counter:06d}"
 
@@ -83,7 +83,8 @@ class SettlementCoordinator:
         dest_bank: str,
         dest_account: str,
         amount: float,
-        description: str = ""
+        description: str = "",
+        sim_date: Optional[datetime] = None
     ) -> SettlementResult:
         """
         Execute a three-step inter-bank transfer.
@@ -107,8 +108,8 @@ class SettlementCoordinator:
         Returns:
             SettlementResult with detailed status and transaction IDs
         """
-        settlement_ref = self._generate_settlement_ref()
-        timestamp = datetime.now().isoformat()
+        settlement_ref = self._generate_settlement_ref(sim_date)
+        timestamp = (sim_date or datetime.now()).isoformat()
 
         result = SettlementResult(
             status="PENDING",

@@ -1,0 +1,35 @@
+      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND
+    13183   13181   13162     327556  ?         197609 00:39:29 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+     4041    4039    4020     128296  ?         197609   Feb 18 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+     7142       1    7142     245148  ?         197609   Feb 18 /usr/lib/gnupg/keyboxd
+    17498       1   17478      95052  ?         197609 16:59:03 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+    17499       1   17478      88804  ?         197609 16:59:03 /usr/bin/head
+    17546       1   17525      90132  ?         197609 16:59:20 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+     4408       1    4389     192840  ?         197609   Feb 18 /usr/bin/bash
+    15411   15409   15390     390588  ?         197609 13:14:13 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+     8432       1    8413     268340  ?         197609 21:08:53 /usr/bin/bash
+     4410    4408    4389     197296  ?         197609   Feb 18 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+     4085    4083    4064     170200  ?         197609   Feb 18 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+    15409       1   15390     104404  ?         197609 13:14:13 /usr/bin/bash
+     4061       1    4042     171668  ?         197609   Feb 18 /usr/bin/bash
+     8519       1    8498     231600  ?         197609 21:14:37 /usr/bin/bash
+     4039       1    4020     115256  ?         197609   Feb 18 /usr/bin/bash
+    17475       1   17454      71764  ?         197609 16:58:55 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+     4318       1    4299     195196  ?         197609   Feb 18 /usr/bin/bash
+    17613       1   17592     104312  ?         197609 16:59:35 /usr/bin/bash
+    13181       1   13162     327320  ?         197609 00:39:29 /usr/bin/bash
+    17750       1   17729     121436  ?         197609 17:00:19 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+     8521    8519    8498     261628  ?         197609 21:14:37 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+    17684   17681   17660     117240  ?         197609 17:00:05 /usr/bin/sed
+     4083       1    4064     176040  ?         197609   Feb 18 /usr/bin/bash
+    24039   23912   24039     402136  cons0     197609 20:05:18 /usr/bin/PS
+    17683   17681   17660     108488  ?         197609 17:00:05 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+    17681       1   17660     108304  ?         197609 17:00:05 /usr/bin/bash
+     4320    4318    4299     194640  ?         197609   Feb 18 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+    23912       1   23912       5808  cons0     197609 20:04:58 /usr/bin/bash
+     8434    8432    8413     262204  ?         197609 21:08:53 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+     8474       1    8455     241376  ?         197609 21:14:15 /usr/bin/bash
+     4063    4061    4042     116812  ?         197609   Feb 18 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+    17615   17613   17592      97140  ?         197609 16:59:35 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+    17430       1   17409      86740  ?         197609 16:58:41 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
+     8476    8474    8455     270868  ?         197609 21:14:15 /c/Users/alber/AppData/Local/Programs/Python/Python312/python
