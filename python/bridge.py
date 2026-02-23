@@ -5,6 +5,8 @@ Handles both Mode A (COBOL subprocess) and Mode B (Python-only) seeding.
 
 import subprocess
 import sqlite3
+import os
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -80,12 +82,98 @@ class COBOLBridge:
         self.db = sqlite3.connect(str(db_path))
         self.db.row_factory = sqlite3.Row  # Return dicts instead of tuples
 
+        # Ensure required tables exist
+        self._ensure_tables()
+
         # Initialize integrity chain with per-node secret key
         secret_key = self._get_or_create_secret_key()
         self.chain = IntegrityChain(self.db, secret_key)
 
         # Check if COBOL binaries are available
         self.cobol_available = (self.bin_dir / "ACCOUNTS").exists()
+
+        # Detect if we need Docker to run COBOL (Linux binaries on Windows)
+        self.use_docker = self.cobol_available and sys.platform == "win32"
+
+    def _run_cobol_program(self, program: str, args: list, cwd: str = None, timeout: int = 5) -> subprocess.CompletedProcess:
+        """
+        Run a COBOL program, routing through Docker on Windows.
+        On Linux/Docker, runs binary directly. On Windows, uses docker run.
+        """
+        if self.use_docker:
+            # Route through Docker: mount project root at /app, cd to node dir
+            project_root = Path(self.bin_dir).resolve().parent.parent
+            # Convert Windows path to Docker-compatible format
+            docker_path = str(project_root)
+            # Convert backslashes to forward slashes for Docker volume mount
+            docker_path = docker_path.replace('\\', '/')
+            # Convert drive letter: B:/... → //b/... for Git Bash / Docker on Windows
+            if len(docker_path) >= 2 and docker_path[1] == ':':
+                docker_path = '/' + docker_path[0].lower() + docker_path[2:]
+
+            # Build the command to run inside Docker
+            node_dir = f"/app/banks/{self.node}"
+            cobol_bin = f"/app/cobol/bin/{program}"
+            # Shell-escape each argument to handle special chars (|, &, etc.)
+            import shlex
+            escaped_args = ' '.join(shlex.quote(a) for a in args)
+            inner_cmd = f"cd {node_dir} && {cobol_bin} {escaped_args}"
+
+            docker_cmd = [
+                "docker", "run", "--rm",
+                "-v", f"{docker_path}:/app",
+                "-w", "/app",
+                "cobol-dev",
+                "bash", "-c", inner_cmd
+            ]
+
+            # MSYS_NO_PATHCONV prevents Git Bash from mangling /app paths
+            env = os.environ.copy()
+            env["MSYS_NO_PATHCONV"] = "1"
+
+            return subprocess.run(
+                docker_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout + 10,  # Extra time for Docker overhead
+                env=env
+            )
+        else:
+            # Direct execution (inside Docker or on Linux)
+            cmd = [str(self.bin_dir / program)] + args
+            return subprocess.run(
+                cmd,
+                cwd=cwd or str(self.work_dir),
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+
+    def _ensure_tables(self):
+        """Ensure required database tables exist."""
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS accounts (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                balance REAL NOT NULL,
+                status TEXT NOT NULL,
+                open_date TEXT,
+                last_activity TEXT
+            )
+        """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS transactions (
+                tx_id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                type TEXT NOT NULL,
+                amount REAL NOT NULL,
+                timestamp TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL
+            )
+        """)
+        self.db.commit()
 
     def _get_or_create_secret_key(self) -> str:
         """Get or create per-node HMAC secret key from .server_key file."""
@@ -201,13 +289,7 @@ class COBOLBridge:
 
         accounts = []
         try:
-            result = subprocess.run(
-                [str(self.bin_dir / "ACCOUNTS"), "LIST"],
-                cwd=str(self.work_dir),
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            result = self._run_cobol_program("ACCOUNTS", ["LIST"])
 
             for line in result.stdout.strip().split('\n'):
                 if not line or not line.startswith("ACCOUNT|"):
@@ -250,17 +332,11 @@ class COBOLBridge:
 
         result = {"status": "99", "message": "Unknown error"}
         try:
-            args = [str(self.bin_dir / "TRANSACT"), tx_type.upper(), account_id, str(amount), description]
+            cobol_args = [tx_type.upper(), account_id, str(amount), description]
             if target_id:
-                args.append(target_id)
+                cobol_args.append(target_id)
 
-            proc = subprocess.run(
-                args,
-                cwd=str(self.work_dir),
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            proc = self._run_cobol_program("TRANSACT", cobol_args)
 
             # Parse output: RESULT|{STATUS} at end, and OK|... if success
             for line in proc.stdout.strip().split('\n'):
@@ -292,13 +368,7 @@ class COBOLBridge:
 
         result = {"status": "99", "message": "Unknown error"}
         try:
-            proc = subprocess.run(
-                [str(self.bin_dir / "VALIDATE"), account_id, str(amount)],
-                cwd=str(self.work_dir),
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            proc = self._run_cobol_program("VALIDATE", [account_id, str(amount)])
 
             for line in proc.stdout.strip().split('\n'):
                 if line.startswith("RESULT|"):
@@ -323,17 +393,11 @@ class COBOLBridge:
 
         report_lines = []
         try:
-            args = [str(self.bin_dir / "REPORTS"), report_type.upper()]
+            cobol_args = [report_type.upper()]
             if account_id and report_type.upper() == "STATEMENT":
-                args.append(account_id)
+                cobol_args.append(account_id)
 
-            proc = subprocess.run(
-                args,
-                cwd=str(self.work_dir),
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            proc = self._run_cobol_program("REPORTS", cobol_args)
 
             for line in proc.stdout.strip().split('\n'):
                 if not line.startswith("RESULT|"):
@@ -357,13 +421,7 @@ class COBOLBridge:
 
         result = {"status": "99", "message": "Unknown error", "output": [], "summary": {}}
         try:
-            proc = subprocess.run(
-                [str(self.bin_dir / "TRANSACT"), "BATCH"],
-                cwd=str(self.work_dir),
-                capture_output=True,
-                text=True,
-                timeout=30  # Batch may take longer
-            )
+            proc = self._run_cobol_program("TRANSACT", ["BATCH"], timeout=30)
 
             output_lines = proc.stdout.strip().split('\n')
             result["output"] = output_lines

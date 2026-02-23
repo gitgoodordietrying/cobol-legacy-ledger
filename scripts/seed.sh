@@ -122,11 +122,11 @@ bank_data = {
         ("ACT-E-008", "Youth Skills Initiative", "S", 850000.00, "A"),
     ],
     "CLEARING": [
-        ("NST-BANK-A", "Nostro Account - BANK_A", "C", 0.00, "A"),
-        ("NST-BANK-B", "Nostro Account - BANK_B", "C", 0.00, "A"),
-        ("NST-BANK-C", "Nostro Account - BANK_C", "C", 0.00, "A"),
-        ("NST-BANK-D", "Nostro Account - BANK_D", "C", 0.00, "A"),
-        ("NST-BANK-E", "Nostro Account - BANK_E", "C", 0.00, "A"),
+        ("NST-BANK-A", "Nostro Account - BANK_A", "C", 10000000.00, "A"),
+        ("NST-BANK-B", "Nostro Account - BANK_B", "C", 10000000.00, "A"),
+        ("NST-BANK-C", "Nostro Account - BANK_C", "C", 10000000.00, "A"),
+        ("NST-BANK-D", "Nostro Account - BANK_D", "C", 10000000.00, "A"),
+        ("NST-BANK-E", "Nostro Account - BANK_E", "C", 10000000.00, "A"),
     ],
 }
 

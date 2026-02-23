@@ -29,8 +29,9 @@ fi
 
 # Run command in container with project mounted at /app
 # Escape backslashes for Windows paths if present
+# MSYS_NO_PATHCONV prevents Git Bash from converting /app to C:/Program Files/Git/app
 DOCKER_VOL_PATH="$DOCKER_PROJECT_ROOT"
-docker run --rm \
+MSYS_NO_PATHCONV=1 docker run --rm \
   -v "$DOCKER_VOL_PATH":/app \
   -w /app \
   "$IMAGE_NAME" \

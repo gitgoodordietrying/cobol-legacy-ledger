@@ -1,0 +1,7 @@
+ACT-B-001|D|50000.00|Wire in TechStart
+ACT-B-002|W|25000.00|Operating expense Logistics
+ACT-B-003|D|100000.00|Investor contribution
+ACT-B-004|T|75000.00|Consolidation|ACT-B-001
+ACT-B-005|D|12500.00|Premium payment
+ACT-B-006|W|50000.00|Payroll distribution
+ACT-B-007|I|1250.50|Monthly interest

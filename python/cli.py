@@ -9,6 +9,7 @@ from pathlib import Path
 from .bridge import COBOLBridge
 from .auth import Role, get_auth_context
 from .settlement import SettlementCoordinator, DEMO_SETTLEMENT_BATCH
+from .cross_verify import CrossNodeVerifier, tamper_balance
 
 
 @click.group()
@@ -309,22 +310,30 @@ def network_status(data_dir: str):
 
     click.echo("║  ────────────────────────────────────────────────────────────  ║")
 
-    # Clearing house
+    # Clearing house — show balance changes relative to initial funding
+    NOSTRO_INITIAL = 10000000.00  # Each nostro starts with $10M working capital
     try:
         bridge = COBOLBridge(node='CLEARING', data_dir=data_dir)
         accounts = bridge.list_accounts()
-        nostro_net = sum(acct['balance'] for acct in accounts)
         chain_entries = len(bridge.chain.get_chain_for_display())
         bridge.close()
 
         total_chain_entries += chain_entries
 
-        click.echo(f"║  CLEARING 5 accounts   Net:   ${nostro_net:>12.2f}   Chain: {chain_entries:>2} entries ║")
+        # Calculate net settlement position (change from initial)
+        nostro_changes = {}
+        for acct in sorted(accounts, key=lambda x: x['id']):
+            change = acct['balance'] - NOSTRO_INITIAL
+            nostro_changes[acct['id']] = change
+        nostro_net = sum(nostro_changes.values())
+
+        click.echo(f"║  CLEARING {len(accounts)} accounts   Net:   ${nostro_net:>12.2f}   Chain: {chain_entries:>2} entries ║")
         click.echo("║                                                              ║")
 
-        # Show individual nostro balances
-        for acct in sorted(accounts, key=lambda x: x['id']):
-            click.echo(f"║  {acct['id']:<10} {acct['balance']:>12.2f}                                    ║")
+        # Show individual nostro position changes
+        for acct_id, change in sorted(nostro_changes.items()):
+            sign = "+" if change >= 0 else "-"
+            click.echo(f"║  {acct_id:<12} {sign}${abs(change):>11.2f}                                ║")
 
         click.echo("║  ────────────────────────────────────────────────────────────  ║")
         balanced = "✓ BALANCED" if abs(nostro_net) < 0.01 else "✗ UNBALANCED"
@@ -335,6 +344,120 @@ def network_status(data_dir: str):
     click.echo("║                                                              ║")
     click.echo("╚══════════════════════════════════════════════════════════════╝")
     click.echo("")
+
+
+@cli.command()
+@click.option('--cross-node', is_flag=True, default=False, help='Run cross-node verification')
+@click.option('--node', default=None, help='Verify single node (default: all)')
+@click.option('--data-dir', default='banks', help='Data directory')
+def verify(cross_node: bool, node: str, data_dir: str):
+    """Verify integrity chains. Use --cross-node for full network verification."""
+    if cross_node or node is None:
+        # Cross-node verification
+        verifier = CrossNodeVerifier(data_dir=data_dir)
+        report = verifier.verify_all()
+        verifier.close()
+
+        click.echo("")
+        click.echo("╔══════════════════════════════════════════════════════════════╗")
+        click.echo("║  CROSS-NODE INTEGRITY VERIFICATION                          ║")
+        click.echo("╠══════════════════════════════════════════════════════════════╣")
+        click.echo("║                                                              ║")
+        click.echo("║  CHAIN INTEGRITY                                             ║")
+
+        for n in ['BANK_A', 'BANK_B', 'BANK_C', 'BANK_D', 'BANK_E', 'CLEARING']:
+            intact = report.chain_integrity.get(n, False)
+            entries = report.chain_lengths.get(n, 0)
+            status = "✓ INTACT" if intact else "✗ BROKEN"
+            click.echo(f"║    {n:<10} {entries:>3} entries   {status:<20}             ║")
+
+        click.echo("║                                                              ║")
+        click.echo("║  SETTLEMENT CROSS-REFERENCES                                 ║")
+        click.echo(f"║    {report.settlements_checked} settlements verified"
+                   f"                                    ║")
+        click.echo(f"║    {report.settlements_matched} matched  ·  "
+                   f"{report.settlements_partial} partial  ·  "
+                   f"{report.settlements_mismatched} mismatched  ·  "
+                   f"{report.settlements_orphaned} orphaned   ║")
+
+        if report.anomalies:
+            click.echo("║                                                              ║")
+            click.echo("║  ⚠ ANOMALIES DETECTED                                       ║")
+            for anomaly in report.anomalies[:5]:
+                # Truncate long anomalies
+                display = anomaly[:56]
+                click.echo(f"║    {display:<56} ║")
+
+            # For tamper detection, add the dramatic "two witnesses" line
+            for anomaly in report.anomalies:
+                if "chain hash mismatch" in anomaly:
+                    click.echo("║                                                              ║")
+                    click.echo("║    → Two independent witnesses contradict the tampered ledger ║")
+                    break
+
+        click.echo("║                                                              ║")
+        click.echo("║  ─────────────────────────────────────────────────────────── ║")
+        if report.all_chains_intact and report.all_settlements_matched:
+            click.echo("║  ✓ ALL CHAINS INTACT  ·  ALL SETTLEMENTS MATCHED             ║")
+        else:
+            issues = []
+            if not report.all_chains_intact:
+                broken = sum(1 for v in report.chain_integrity.values() if not v)
+                issues.append(f"{broken} chain(s) broken")
+            if not report.all_settlements_matched:
+                issues.append(f"{len(report.anomalies)} anomaly(ies)")
+            click.echo(f"║  ✗ INTEGRITY VIOLATION  ·  {' · '.join(issues):<33}║")
+
+        click.echo(f"║  Verified in {report.verification_time_ms:.1f}ms"
+                   f"{'':>{46 - len(f'{report.verification_time_ms:.1f}')}}║")
+        click.echo("╚══════════════════════════════════════════════════════════════╝")
+        click.echo("")
+    else:
+        # Single-node verification
+        bridge = COBOLBridge(node=node, data_dir=data_dir)
+        result = bridge.chain.verify_chain()
+        bridge.close()
+
+        click.echo(f"\n{node} Chain Verification:")
+        click.echo(f"  Valid:           {result['valid']}")
+        click.echo(f"  Entries checked: {result['entries_checked']}")
+        click.echo(f"  Time:            {result['time_ms']:.1f}ms")
+        if not result['valid']:
+            click.echo(f"  First break:     {result['first_break']} ({result['break_type']})")
+        else:
+            click.echo(f"  Status:          ✓ All entries verified")
+
+
+@cli.command()
+@click.option('--node', required=True, help='Node to tamper (e.g., BANK_A)')
+@click.option('--type', 'tamper_type', type=click.Choice(['balance']), default='balance',
+              help='Type of tamper')
+@click.option('--account', required=True, help='Account to tamper (e.g., ACT-A-001)')
+@click.option('--amount', type=float, required=True, help='New balance amount')
+@click.option('--data-dir', default='banks', help='Data directory')
+def tamper_demo(node: str, tamper_type: str, account: str, amount: float, data_dir: str):
+    """DEMO ONLY: Tamper with a node's data to demonstrate integrity detection.
+
+    WARNING: This modifies .DAT files directly, bypassing COBOL and the integrity chain.
+    For demonstration purposes only.
+
+    Example: tamper-demo --node BANK_A --account ACT-A-001 --amount 9999.99
+    """
+    click.echo("")
+    click.echo("⚠  TAMPER DEMO — For demonstration purposes only")
+    click.echo(f"   Modifying {node}/{account} balance to ${amount:.2f}")
+    click.echo("")
+
+    try:
+        result = tamper_balance(data_dir, node, account, amount)
+        click.echo(f"   Modified {result['file']}")
+        click.echo(f"   {account} balance → ${amount:.2f}")
+        click.echo("")
+        click.echo("   Run 'verify --cross-node' to detect this tampering.")
+        click.echo("")
+    except Exception as e:
+        click.echo(f"   Error: {e}", err=True)
+        sys.exit(1)
 
 
 if __name__ == '__main__':

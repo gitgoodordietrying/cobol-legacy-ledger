@@ -44,7 +44,9 @@ class SettlementResult:
     dest_trx_id: str         # Transaction ID from Step 3 (or "")
     amount: float
     source_bank: str
+    source_account: str      # Source account ID (ACT-A-001, etc.)
     dest_bank: str
+    dest_account: str        # Destination account ID (ACT-B-003, etc.)
     error: str               # Empty string on success, error message on failure
     steps_completed: int     # 0, 1, 2, or 3
     settlement_ref: str      # Unique settlement reference (STL-YYYYMMDD-NNNNNN)
@@ -116,7 +118,9 @@ class SettlementCoordinator:
             dest_trx_id="",
             amount=amount,
             source_bank=source_bank,
+            source_account=source_account,
             dest_bank=dest_bank,
+            dest_account=dest_account,
             error="",
             steps_completed=0,
             settlement_ref=settlement_ref,
@@ -129,7 +133,7 @@ class SettlementCoordinator:
             # ============================================================
             source_desc = f"XFER-TO-{dest_bank}-{dest_account}|{settlement_ref}"
             source_bridge = self.nodes[source_bank]
-            source_result = source_bridge.process_transaction_via_cobol(
+            source_result = source_bridge.process_transaction(
                 tx_type="WITHDRAW",
                 account_id=source_account,
                 amount=amount,
@@ -152,7 +156,7 @@ class SettlementCoordinator:
 
             # Step 2a: CLEARING DEPOSIT (receive in source's nostro)
             clear_desc_deposit = f"SETTLE-{source_bank}-TO-{dest_bank}|{result.source_trx_id}|{settlement_ref}"
-            clear_result_deposit = clearing_bridge.process_transaction_via_cobol(
+            clear_result_deposit = clearing_bridge.process_transaction(
                 tx_type="DEPOSIT",
                 account_id=NOSTRO_MAP[source_bank],
                 amount=amount,
@@ -169,7 +173,7 @@ class SettlementCoordinator:
 
             # Step 2b: CLEARING WITHDRAW (pay out from destination's nostro)
             clear_desc_withdraw = f"SETTLE-{source_bank}-TO-{dest_bank}|{result.source_trx_id}|{settlement_ref}"
-            clear_result_withdraw = clearing_bridge.process_transaction_via_cobol(
+            clear_result_withdraw = clearing_bridge.process_transaction(
                 tx_type="WITHDRAW",
                 account_id=NOSTRO_MAP[dest_bank],
                 amount=amount,
@@ -190,7 +194,7 @@ class SettlementCoordinator:
             # ============================================================
             dest_desc = f"XFER-FROM-{source_bank}-{source_account}|{settlement_ref}"
             dest_bridge = self.nodes[dest_bank]
-            dest_result = dest_bridge.process_transaction_via_cobol(
+            dest_result = dest_bridge.process_transaction(
                 tx_type="DEPOSIT",
                 account_id=dest_account,
                 amount=amount,

@@ -42,6 +42,7 @@
        01  WS-IN-TARGET-ID        PIC X(10) VALUE SPACES.
        01  WS-IN-TYPE             PIC X(1) VALUE SPACES.
        01  WS-IN-AMOUNT           PIC S9(10)V99 VALUE 0.
+       01  WS-IN-AMOUNT-STR       PIC X(20) VALUE SPACES.
        01  WS-IN-DESC             PIC X(40) VALUE SPACES.
        01  WS-TX-ID               PIC X(12) VALUE SPACES.
        01  WS-TX-ID-NUM           PIC 9(6) VALUE 0.
@@ -85,24 +86,36 @@
 
        PROCEDURE DIVISION.
        MAIN-PROGRAM.
-           ACCEPT WS-OPERATION FROM COMMAND-LINE
+           ACCEPT WS-BATCH-LINE FROM COMMAND-LINE
+
+           *> Extract operation keyword and all fields (first word)
+           UNSTRING WS-BATCH-LINE DELIMITED BY SPACE
+               INTO WS-OPERATION
+                    WS-IN-ACCT-ID
+                    WS-IN-AMOUNT-STR
+                    WS-IN-TARGET-ID
+                    WS-IN-DESC
+           END-UNSTRING
+
+           *> Trim all fields after parsing
+           MOVE FUNCTION TRIM(WS-OPERATION) TO WS-OPERATION
+           MOVE FUNCTION TRIM(WS-IN-ACCT-ID) TO WS-IN-ACCT-ID
+           MOVE FUNCTION TRIM(WS-IN-AMOUNT-STR) TO WS-IN-AMOUNT-STR
+           MOVE FUNCTION TRIM(WS-IN-TARGET-ID) TO WS-IN-TARGET-ID
+           MOVE FUNCTION TRIM(WS-IN-DESC) TO WS-IN-DESC
+
+           *> Convert amount from string to numeric
+           IF WS-IN-AMOUNT-STR NOT = SPACES
+               MOVE FUNCTION NUMVAL(WS-IN-AMOUNT-STR)
+                   TO WS-IN-AMOUNT
+           END-IF
 
            EVALUATE WS-OPERATION
                WHEN "DEPOSIT"
-                   ACCEPT WS-IN-ACCT-ID FROM COMMAND-LINE
-                   ACCEPT WS-IN-AMOUNT FROM COMMAND-LINE
-                   ACCEPT WS-IN-DESC FROM COMMAND-LINE
                    PERFORM PROCESS-DEPOSIT
                WHEN "WITHDRAW"
-                   ACCEPT WS-IN-ACCT-ID FROM COMMAND-LINE
-                   ACCEPT WS-IN-AMOUNT FROM COMMAND-LINE
-                   ACCEPT WS-IN-DESC FROM COMMAND-LINE
                    PERFORM PROCESS-WITHDRAW
                WHEN "TRANSFER"
-                   ACCEPT WS-IN-ACCT-ID FROM COMMAND-LINE
-                   ACCEPT WS-IN-AMOUNT FROM COMMAND-LINE
-                   ACCEPT WS-IN-TARGET-ID FROM COMMAND-LINE
-                   ACCEPT WS-IN-DESC FROM COMMAND-LINE
                    PERFORM PROCESS-TRANSFER
                WHEN "BATCH"
                    PERFORM PROCESS-BATCH
@@ -113,13 +126,38 @@
            STOP RUN.
 
        GENERATE-TX-ID.
+      *>   Count existing TRANSACT.DAT records to continue sequence
+           IF WS-TX-ID-NUM = 0
+               PERFORM COUNT-EXISTING-TRANSACTIONS
+           END-IF
+      *>   Derive node code from first loaded account ID (4th char)
+      *>   ACT-A-001 → 'A', ACT-B-001 → 'B', NST-BANK-A → 'B'
+           IF WS-ACCOUNT-COUNT > 0
+               MOVE WS-A-ID(1)(5:1) TO WS-NODE-CODE
+           END-IF
            ADD 1 TO WS-TX-ID-NUM
+           MOVE SPACES TO WS-TX-ID
            STRING "TRX-" DELIMITED SIZE
                WS-NODE-CODE DELIMITED SIZE
                "-" DELIMITED SIZE
                WS-TX-ID-NUM DELIMITED SIZE
                INTO WS-TX-ID
            END-STRING.
+
+       COUNT-EXISTING-TRANSACTIONS.
+           OPEN INPUT TRANSACT-FILE
+           IF WS-TX-STATUS NOT = "00"
+               MOVE 0 TO WS-TX-ID-NUM
+           ELSE
+               PERFORM UNTIL 1 = 0
+                   READ TRANSACT-FILE
+                       AT END
+                           CLOSE TRANSACT-FILE
+                           EXIT PERFORM
+                   END-READ
+                   ADD 1 TO WS-TX-ID-NUM
+               END-PERFORM
+           END-IF.
 
        LOAD-ALL-ACCOUNTS.
            MOVE 0 TO WS-ACCOUNT-COUNT

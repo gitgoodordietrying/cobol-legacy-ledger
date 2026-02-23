@@ -1,0 +1,8 @@
+ACT-C-001|D|25000.00|Deposit Wong
+ACT-C-002|W|10000.00|Withdrawal OBrien
+ACT-C-003|D|50000.00|Corporate transfer
+ACT-C-004|D|12500.00|Contribution
+ACT-C-005|W|15000.00|Disbursement
+ACT-C-006|T|30000.00|Inter-account|ACT-C-002
+ACT-C-007|I|800.00|Interest credit
+ACT-C-008|D|20000.00|Deposit Rivera

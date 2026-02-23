@@ -110,8 +110,12 @@ echo "Step 3: Test TRANSACT DEPOSIT..."
 if [ ! -f "$PROJECT_ROOT/cobol/bin/TRANSACT" ]; then
   echo -e "${YELLOW}⊘ TRANSACT binary not built (stub program)${NC}"
 else
-  # Extract first account ID from ACCOUNTS.DAT if it exists
-  FIRST_ACCT="ACT-$NODE-001"
+  # Extract first account ID dynamically from ACCOUNTS LIST output
+  FIRST_ACCT=$(run_cobol ACCOUNTS LIST 2>&1 | grep "^ACCOUNT|" | head -1 | cut -d'|' -f2 | tr -d ' ')
+  if [ -z "$FIRST_ACCT" ]; then
+    FIRST_ACCT="ACT-${NODE: -1}-001"  # Fallback
+  fi
+  echo "  Using account: $FIRST_ACCT"
 
   if OUTPUT=$(run_cobol TRANSACT DEPOSIT "$FIRST_ACCT" 1000.00 "test deposit" 2>&1); then
     if check_output_contains "$OUTPUT" "OK|DEPOSIT"; then
@@ -167,8 +171,12 @@ echo "Step 5: Test VALIDATE..."
 if [ ! -f "$PROJECT_ROOT/cobol/bin/VALIDATE" ]; then
   echo -e "${YELLOW}⊘ VALIDATE binary not built (stub program)${NC}"
 else
-  # Test valid account
-  if OUTPUT=$(run_cobol VALIDATE "ACT-$NODE-001" 2>&1); then
+  # Test valid account — use dynamically extracted FIRST_ACCT (or re-extract)
+  if [ -z "$FIRST_ACCT" ]; then
+    FIRST_ACCT=$(run_cobol ACCOUNTS LIST 2>&1 | grep "^ACCOUNT|" | head -1 | cut -d'|' -f2 | tr -d ' ')
+  fi
+  echo "  Validating account: $FIRST_ACCT"
+  if OUTPUT=$(run_cobol VALIDATE "$FIRST_ACCT" 2>&1); then
     if check_output_contains "$OUTPUT" "RESULT|00"; then
       echo -e "${GREEN}✓ VALIDATE returned RESULT|00 for valid account${NC}"
     else

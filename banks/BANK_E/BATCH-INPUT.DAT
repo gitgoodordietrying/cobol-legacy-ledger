@@ -1,0 +1,8 @@
+ACT-E-001|D|150000.00|Community grant
+ACT-E-002|W|5000.00|Personal withdrawal
+ACT-E-003|D|250000.00|Loan pool deposit
+ACT-E-004|W|10000.00|Personal disbursement
+ACT-E-005|D|50000.00|Food bank contribution
+ACT-E-006|T|100000.00|Development project|ACT-E-001
+ACT-E-007|D|75000.00|Entrepreneurship fund
+ACT-E-008|I|2000.00|Savings interest

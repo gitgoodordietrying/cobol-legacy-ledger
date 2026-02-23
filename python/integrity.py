@@ -75,7 +75,7 @@ class IntegrityChain:
         # Get next chain index
         cursor = self.db.execute("SELECT MAX(chain_index) FROM chain_entries")
         max_index = cursor.fetchone()[0]
-        chain_index = (max_index or -1) + 1
+        chain_index = 0 if max_index is None else max_index + 1
 
         # Insert into database
         self.db.execute("""
