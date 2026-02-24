@@ -502,9 +502,11 @@ def tamper_demo(node: str, tamper_type: str, account: str, amount: float, data_d
 @click.option('--output-dir', default=None, help='Log output directory (default: none)')
 @click.option('--internal-ratio', default=40, type=int, help='Percentage of internal transactions (default: 40)')
 @click.option('--monthly-events/--no-monthly-events', default=True, help='Enable interest+fee processing (default: on)')
+@click.option('--scenarios/--no-scenarios', default=True, help='Enable scripted scenario events (default: on)')
+@click.option('--relaxed-guards/--safe-guards', default=True, help='Relax safety guards for organic failures (default: relaxed)')
 @click.option('--data-dir', default='banks', help='Data directory')
 def simulate(days, time_scale, tx_per_day, verify_every, seed, output_dir,
-             internal_ratio, monthly_events, data_dir):
+             internal_ratio, monthly_events, scenarios, relaxed_guards, data_dir):
     """Run a two-layer banking day simulation.
 
     Generates realistic daily banking activity across all 5 banks with two layers:
@@ -531,6 +533,7 @@ def simulate(days, time_scale, tx_per_day, verify_every, seed, output_dir,
     click.echo(f"\n  Banking Day Simulator")
     click.echo(f"  Mode: {mode} · Scale: 1s = {time_scale}s sim · TX/day: {tx_per_day}")
     click.echo(f"  Internal: {internal_ratio}% · Monthly events: {'on' if monthly_events else 'off'}")
+    click.echo(f"  Scenarios: {'on' if scenarios else 'off'} · Guards: {'relaxed' if relaxed_guards else 'safe'}")
     if seed is not None:
         click.echo(f"  Seed: {seed}")
     if output_dir:
@@ -545,6 +548,8 @@ def simulate(days, time_scale, tx_per_day, verify_every, seed, output_dir,
         output_dir=output_dir,
         internal_ratio=internal_ratio,
         monthly_events=monthly_events,
+        scenarios=scenarios,
+        relaxed_guards=relaxed_guards,
     )
     engine.run(days=days)
 

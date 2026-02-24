@@ -497,6 +497,56 @@ class COBOLBridge:
         row = cursor.fetchone()
         return dict(row) if row else None
 
+    def update_account_status(self, account_id: str, new_status: str) -> Dict[str, Any]:
+        """
+        Update account status in both DAT file and SQLite.
+        Statuses: A=active, F=frozen, C=closed.
+        Mode B only (direct file + DB update). COBOL binaries not invoked.
+        """
+        if new_status not in ('A', 'F', 'C'):
+            return {'status': '03', 'message': f'Invalid status: {new_status}'}
+
+        account = self.get_account(account_id)
+        if not account:
+            return {'status': '03', 'message': f'Account {account_id} not found'}
+
+        old_status = account['status']
+
+        # Update SQLite
+        self.db.execute(
+            "UPDATE accounts SET status = ?, last_activity = ? WHERE id = ?",
+            (new_status, datetime.now().strftime('%Y%m%d'), account_id)
+        )
+        self.db.commit()
+
+        # Update DAT file — read all accounts from DB, rewrite
+        cursor = self.db.execute(
+            "SELECT id, name, type, balance, status, open_date, last_activity FROM accounts"
+        )
+        all_accounts = [dict(row) for row in cursor.fetchall()]
+        self._write_accounts_to_dat(all_accounts)
+
+        # Record in integrity chain
+        ts_now = datetime.now().isoformat()
+        node_code = self.NODE_CODES.get(self.node, 'X')
+        tx_id = f"STS-{node_code}-{datetime.now().strftime('%H%M%S')}"[:12]
+        self.chain.append(
+            tx_id=tx_id,
+            account_id=account_id,
+            tx_type='S',  # Status change
+            amount=0.0,
+            timestamp=ts_now,
+            description=f"Status {old_status}->{new_status}",
+            status='00',
+        )
+
+        return {
+            'status': '00',
+            'message': f'{account_id} status changed {old_status}->{new_status}',
+            'old_status': old_status,
+            'new_status': new_status,
+        }
+
     def _sync_accounts_to_db(self):
         """
         Sync accounts from DAT file to SQLite (initial population).

@@ -23,8 +23,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, TextIO
 
+from dataclasses import dataclass, field
+from math import ceil
+
 from .settlement import SettlementCoordinator
-from .cross_verify import CrossNodeVerifier
+from .cross_verify import CrossNodeVerifier, tamper_balance
 
 
 # Bank personalities with internal transaction profiles
@@ -182,12 +185,171 @@ class SimulationLogger:
         self.log(stream, f"  External txns:     {external_count}")
         self.log(stream, f"  {'=' * 40}")
 
+    def flush(self):
+        """Flush all open file handles to disk."""
+        for f in self._log_files.values():
+            f.flush()
+        for f in self._csv_files.values():
+            f.flush()
+
     def close(self):
         """Close all open files."""
         for f in self._log_files.values():
             f.close()
         for f in self._csv_files.values():
             f.close()
+
+
+# ── Scenario Layer ─────────────────────────────────────────────────────────
+
+
+class EventType:
+    """String constants for scripted simulation events."""
+    FREEZE_ACCOUNT = "FREEZE_ACCOUNT"
+    CLOSE_ACCOUNT = "CLOSE_ACCOUNT"
+    TAMPER_BALANCE = "TAMPER_BALANCE"
+    LARGE_TRANSFER = "LARGE_TRANSFER"
+    DRAIN_TRANSFERS = "DRAIN_TRANSFERS"
+    SUSPICIOUS_BURST = "SUSPICIOUS_BURST"
+
+
+@dataclass
+class SimulationEvent:
+    """A scripted event scheduled for a specific simulation day."""
+    day: int
+    event_type: str
+    params: Dict = field(default_factory=dict)
+    description: str = ""
+    fired: bool = False
+
+
+class ScenarioDirector:
+    """
+    Builds an event schedule scaled to the simulation length.
+    25-day sim gets 7 events; 365-day sim gets ~20 across 3 narrative arcs.
+    """
+
+    # 25-day base schedule (days are 1-indexed)
+    BASE_SCHEDULE = [
+        SimulationEvent(
+            day=3, event_type=EventType.LARGE_TRANSFER,
+            params={'source_bank': 'BANK_B', 'source_account': 'ACT-B-001',
+                    'dest_bank': 'BANK_D', 'dest_account': 'ACT-D-001',
+                    'amount': 55000.00},
+            description="$55,000 wire attempted — exceeds $50K daily limit",
+        ),
+        SimulationEvent(
+            day=5, event_type=EventType.SUSPICIOUS_BURST,
+            params={'bank': 'BANK_A', 'account': 'ACT-A-001',
+                    'count': 8, 'min_amount': 9000, 'max_amount': 9999},
+            description="8 near-CTR deposits ($9,000-$9,999) — structuring pattern",
+        ),
+        SimulationEvent(
+            day=7, event_type=EventType.FREEZE_ACCOUNT,
+            params={'bank': 'BANK_C', 'account': 'ACT-C-005'},
+            description="Regulatory hold — suspicious activity flagged by compliance",
+        ),
+        SimulationEvent(
+            day=10, event_type=EventType.TAMPER_BALANCE,
+            params={'bank': 'BANK_C', 'account': 'ACT-C-001',
+                    'amount': 999999.99},
+            description="Balance set to $999,999.99 via direct DAT edit (tamper)",
+        ),
+        SimulationEvent(
+            day=12, event_type=EventType.DRAIN_TRANSFERS,
+            params={'bank': 'BANK_A', 'account': 'ACT-A-003',
+                    'dest_account': 'ACT-A-001', 'count': 5, 'amount': 300.00},
+            description="5 transfers from low-balance account — NSF cascade expected",
+        ),
+        SimulationEvent(
+            day=15, event_type=EventType.CLOSE_ACCOUNT,
+            params={'bank': 'BANK_A', 'account': 'ACT-A-007'},
+            description="Account closed — future transactions will fail",
+        ),
+    ]
+
+    def __init__(self, total_days: int):
+        self.total_days = total_days
+        self.events = self._build_schedule()
+
+    def _build_schedule(self) -> List[SimulationEvent]:
+        """Scale the base schedule to the simulation length."""
+        if self.total_days <= 30:
+            # Use base schedule as-is, clamping to total_days
+            return [
+                SimulationEvent(
+                    day=e.day, event_type=e.event_type,
+                    params=dict(e.params), description=e.description,
+                )
+                for e in self.BASE_SCHEDULE if e.day <= self.total_days
+            ]
+
+        # For longer sims, scale events proportionally across 3 arcs
+        scale = self.total_days / 25.0
+        events = []
+
+        # Arc 1: Early anomalies (first 30%)
+        arc1_end = int(self.total_days * 0.3)
+        for e in self.BASE_SCHEDULE[:3]:
+            scaled_day = max(2, int(e.day * scale * 0.3))
+            if scaled_day <= arc1_end:
+                events.append(SimulationEvent(
+                    day=scaled_day, event_type=e.event_type,
+                    params=dict(e.params), description=e.description,
+                ))
+
+        # Arc 2: Crisis (30%-60%)
+        arc2_start = arc1_end + 1
+        arc2_end = int(self.total_days * 0.6)
+        crisis_events = self.BASE_SCHEDULE[3:5]  # tamper + drain
+        for i, e in enumerate(crisis_events):
+            scaled_day = arc2_start + int((arc2_end - arc2_start) * (i + 1) / (len(crisis_events) + 1))
+            events.append(SimulationEvent(
+                day=scaled_day, event_type=e.event_type,
+                params=dict(e.params), description=e.description,
+            ))
+
+        # Arc 3: Resolution (60%-100%)
+        arc3_start = arc2_end + 1
+        close_event = self.BASE_SCHEDULE[5]  # close account
+        events.append(SimulationEvent(
+            day=arc3_start + int((self.total_days - arc3_start) * 0.3),
+            event_type=close_event.event_type,
+            params=dict(close_event.params), description=close_event.description,
+        ))
+
+        # Add repeat crisis events for longer simulations
+        if self.total_days >= 180:
+            mid = self.total_days // 2
+            events.append(SimulationEvent(
+                day=mid, event_type=EventType.SUSPICIOUS_BURST,
+                params={'bank': 'BANK_E', 'account': 'ACT-E-002',
+                        'count': 6, 'min_amount': 9000, 'max_amount': 9999},
+                description="Second structuring pattern detected at community bank",
+            ))
+            events.append(SimulationEvent(
+                day=mid + 15, event_type=EventType.FREEZE_ACCOUNT,
+                params={'bank': 'BANK_E', 'account': 'ACT-E-002'},
+                description="Regulatory freeze following structuring detection",
+            ))
+
+        events.sort(key=lambda e: e.day)
+        return events
+
+    def get_events_for_day(self, day_num: int) -> List[SimulationEvent]:
+        """Return unfired events scheduled for this day."""
+        return [e for e in self.events if e.day == day_num and not e.fired]
+
+    def has_tamper_fired(self) -> bool:
+        """Check if any tamper event has been executed."""
+        return any(e.event_type == EventType.TAMPER_BALANCE and e.fired for e in self.events)
+
+    def get_tamper_params(self) -> Optional[Dict]:
+        """Return params of the fired tamper event, if any."""
+        for e in self.events:
+            if e.event_type == EventType.TAMPER_BALANCE and e.fired:
+                return e.params
+        return None
 
 
 class SimulationEngine:
@@ -203,6 +365,8 @@ class SimulationEngine:
         output_dir: Optional[str] = None,
         internal_ratio: int = 40,
         monthly_events: bool = True,
+        scenarios: bool = True,
+        relaxed_guards: bool = True,
     ):
         self.data_dir = data_dir
         self.time_scale = time_scale
@@ -212,10 +376,15 @@ class SimulationEngine:
         self.output_dir = output_dir
         self.internal_ratio = internal_ratio
         self.monthly_events = monthly_events
+        self.scenarios = scenarios
+        self.relaxed_guards = relaxed_guards
 
         self.coordinator = SettlementCoordinator(data_dir=data_dir)
         self._account_cache: Dict[str, List[Dict]] = {}
         self._stopped = False
+
+        # Scenario director (built when run() knows total days)
+        self.director: Optional[ScenarioDirector] = None
 
         # Logger
         self.logger = SimulationLogger(output_dir=output_dir)
@@ -266,7 +435,8 @@ class SimulationEngine:
             amount = round(self.rng.uniform(profile['min'], profile['max']), 2)
 
         source_acct = None
-        for _ in range(3):
+        retries = 1 if self.relaxed_guards else 3
+        for _ in range(retries):
             candidate = self.rng.choice(source_accounts)
             fresh = self._refresh_account(source_bank, candidate['id'])
             if fresh and fresh['balance'] >= amount and fresh['status'] == 'A':
@@ -319,9 +489,11 @@ class SimulationEngine:
             if not fresh:
                 return None
             amount = round(self.rng.uniform(profile['bill_min'], profile['bill_max']), 2)
-            # Don't exceed balance
-            if amount > fresh['balance'] * 0.8:
-                amount = round(fresh['balance'] * 0.3, 2)
+            # Don't exceed balance (relaxed guards allow more organic NSF)
+            guard_ceiling = 0.95 if self.relaxed_guards else 0.8
+            guard_fallback = 0.6 if self.relaxed_guards else 0.3
+            if amount > fresh['balance'] * guard_ceiling:
+                amount = round(fresh['balance'] * guard_fallback, 2)
             if amount <= 0:
                 return None
             desc = self.rng.choice(profile['descriptions']['bill'])
@@ -341,8 +513,10 @@ class SimulationEngine:
                 return None
             amount = round(self.rng.uniform(
                 profile['internal_xfer_min'], profile['internal_xfer_max']), 2)
-            if amount > fresh['balance'] * 0.5:
-                amount = round(fresh['balance'] * 0.2, 2)
+            xfer_ceiling = 0.85 if self.relaxed_guards else 0.5
+            xfer_fallback = 0.4 if self.relaxed_guards else 0.2
+            if amount > fresh['balance'] * xfer_ceiling:
+                amount = round(fresh['balance'] * xfer_fallback, 2)
             if amount <= 0:
                 return None
             desc = self.rng.choice(profile['descriptions']['xfer'])
@@ -486,8 +660,191 @@ class SimulationEngine:
 
         self._current_month = month_str
 
+    # ── Scenario Event Handlers ──────────────────────────────────────────
+
+    def _log_event_banner(self, title: str, day_num: int, detail_lines: List[str]):
+        """Print a distinct event banner to console and all log streams."""
+        banner = f"\n  !! EVENT: {title} — Day {day_num}"
+        print(banner)
+        for line in detail_lines:
+            print(f"     {line}")
+        print()
+
+        # Log to all streams
+        for bank in BANKS:
+            stream = f"{bank}_INTERNAL"
+            self.logger.log(stream, banner)
+            for line in detail_lines:
+                self.logger.log(stream, f"     {line}")
+        self.logger.log('SETTLEMENT', banner)
+        for line in detail_lines:
+            self.logger.log('SETTLEMENT', f"     {line}")
+
+    def _event_freeze_account(self, event: SimulationEvent, day_num: int):
+        """Freeze an account — subsequent transactions will fail with status 04."""
+        bank = event.params['bank']
+        account = event.params['account']
+        bridge = self.coordinator.nodes[bank]
+        result = bridge.update_account_status(account, 'F')
+
+        self._log_event_banner("REGULATORY FREEZE", day_num, [
+            f"{bank} / {account}: Suspicious activity flagged by compliance",
+            f"All subsequent operations on this account will fail (status 04)",
+            f"Result: {result['message']}",
+        ])
+        self._load_accounts()
+
+    def _event_close_account(self, event: SimulationEvent, day_num: int):
+        """Close an account — future transactions to it will fail."""
+        bank = event.params['bank']
+        account = event.params['account']
+        bridge = self.coordinator.nodes[bank]
+        result = bridge.update_account_status(account, 'C')
+
+        self._log_event_banner("ACCOUNT CLOSURE", day_num, [
+            f"{bank} / {account}: Account closed per customer request",
+            f"Future transactions to this account will be rejected",
+            f"Result: {result['message']}",
+        ])
+        self._load_accounts()
+
+    def _event_tamper_balance(self, event: SimulationEvent, day_num: int):
+        """Directly edit a DAT file balance — bypasses integrity chain."""
+        bank = event.params['bank']
+        account = event.params['account']
+        amount = event.params['amount']
+
+        tamper_balance(self.data_dir, bank, account, amount)
+
+        self._log_event_banner("BALANCE TAMPER (EXTERNAL ATTACK)", day_num, [
+            f"{bank} / {account}: Balance set to ${amount:,.2f} via direct DAT edit",
+            f"This bypasses the integrity chain — verification WILL detect it",
+            f"The COBOL ledger has been compromised. Can the system catch it?",
+        ])
+        # Do NOT reload accounts — tamper is in DAT only, DB still has real value
+
+    def _event_large_transfer(self, event: SimulationEvent, day_num: int):
+        """Attempt a transfer exceeding daily limits."""
+        p = event.params
+        self._log_event_banner("LARGE TRANSFER ATTEMPTED", day_num, [
+            f"{p['source_bank']} / {p['source_account']} -> {p['dest_bank']} / {p['dest_account']}",
+            f"Amount: ${p['amount']:,.2f} — exceeds $50,000 daily wire limit",
+        ])
+
+        result = self.coordinator.execute_transfer(
+            source_bank=p['source_bank'], source_account=p['source_account'],
+            dest_bank=p['dest_bank'], dest_account=p['dest_account'],
+            amount=p['amount'], description="Large wire transfer attempt",
+        )
+
+        status = result.status
+        error = result.error or "none"
+        status_line = f"Result: {status} — {error}"
+        if status != "COMPLETED":
+            status_line = f"BLOCKED — {status}: {error}"
+            self.total_failed += 1
+        else:
+            self.total_completed += 1
+            self.total_volume += p['amount']
+
+        print(f"     {status_line}")
+        self.logger.log('SETTLEMENT', f"     {status_line}")
+
+    def _event_drain_transfers(self, event: SimulationEvent, day_num: int):
+        """Multiple transfers from a low-balance account — expect NSF cascade."""
+        bank = event.params['bank']
+        source = event.params['account']
+        dest = event.params['dest_account']
+        count = event.params['count']
+        amount = event.params['amount']
+        bridge = self.coordinator.nodes[bank]
+
+        self._log_event_banner("DRAIN TRANSFERS", day_num, [
+            f"{bank} / {source}: {count} transfers of ${amount:,.2f} each",
+            f"Low-balance account — expecting NSF cascade after initial success(es)",
+        ])
+
+        for i in range(count):
+            result = bridge.process_transaction(
+                source, 'T', amount, f"Drain transfer {i+1}/{count}", target_id=dest)
+            status = "OK" if result['status'] == '00' else f"FAIL{result['status']}"
+            bal = result.get('new_balance', '?')
+            line = f"     Transfer {i+1}/{count}: ${amount:,.2f}  {status}  (balance: ${bal})"
+            print(line)
+
+            stream = f"{bank}_INTERNAL"
+            self.logger.log(stream, line)
+
+            if result['status'] == '00':
+                self.total_completed += 1
+                self.total_volume += amount
+            else:
+                self.total_failed += 1
+
+        self._load_accounts()
+
+    def _event_suspicious_burst(self, event: SimulationEvent, day_num: int):
+        """Multiple near-CTR deposits — structuring pattern."""
+        bank = event.params['bank']
+        account = event.params['account']
+        count = event.params['count']
+        min_amt = event.params['min_amount']
+        max_amt = event.params['max_amount']
+        bridge = self.coordinator.nodes[bank]
+
+        self._log_event_banner("SUSPICIOUS DEPOSIT BURST", day_num, [
+            f"{bank} / {account}: {count} deposits between ${min_amt:,.2f}-${max_amt:,.2f}",
+            f"Pattern: Just below $10,000 CTR threshold — possible structuring",
+        ])
+
+        for i in range(count):
+            amount = round(self.rng.uniform(min_amt, max_amt), 2)
+            result = bridge.process_transaction(
+                account, 'D', amount, f"Cash deposit #{i+1}")
+            status = "OK" if result['status'] == '00' else f"FAIL{result['status']}"
+            line = f"     Deposit {i+1}/{count}: ${amount:,.2f}  {status}"
+            print(line)
+
+            stream = f"{bank}_INTERNAL"
+            self.logger.log(stream, line)
+
+            if result['status'] == '00':
+                self.total_completed += 1
+                self.total_volume += amount
+            else:
+                self.total_failed += 1
+
+        self._load_accounts()
+
+    def _execute_day_events(self, day_num: int, sim_date: datetime):
+        """Fire any scenario events scheduled for this day."""
+        if not self.director:
+            return
+
+        events = self.director.get_events_for_day(day_num)
+        if not events:
+            return
+
+        handlers = {
+            EventType.FREEZE_ACCOUNT: self._event_freeze_account,
+            EventType.CLOSE_ACCOUNT: self._event_close_account,
+            EventType.TAMPER_BALANCE: self._event_tamper_balance,
+            EventType.LARGE_TRANSFER: self._event_large_transfer,
+            EventType.DRAIN_TRANSFERS: self._event_drain_transfers,
+            EventType.SUSPICIOUS_BURST: self._event_suspicious_burst,
+        }
+
+        for event in events:
+            handler = handlers.get(event.event_type)
+            if handler:
+                handler(event, day_num)
+                event.fired = True
+
     def _run_day(self, day_num: int, sim_date: datetime):
         """Execute one simulated banking day."""
+        # Refresh account cache to pick up balance changes from prior days
+        self._load_accounts()
+
         date_str = sim_date.strftime('%a %Y-%m-%d')
         header = f"\n{'=' * 3} DAY {day_num} | {date_str} {'=' * (52 - len(date_str) - len(str(day_num)))}"
         print(header)
@@ -509,6 +866,10 @@ class SimulationEngine:
         self.logger.log_day_header('SETTLEMENT', day_num, date_str)
         for bank in BANKS:
             self.logger.log_day_header(f'{bank}_INTERNAL', day_num, date_str)
+
+        # Fire scenario events BEFORE random transactions
+        if self.scenarios:
+            self._execute_day_events(day_num, sim_date)
 
         # Generate transaction count for the day
         tx_count = self.rng.randint(self.tx_min, self.tx_max)
@@ -625,6 +986,9 @@ class SimulationEngine:
         for bank in BANKS:
             self.logger.log_eod_summary(f'{bank}_INTERNAL', day_completed, day_failed, day_volume)
 
+        # Flush logs to disk after each day
+        self.logger.flush()
+
     def _run_verification(self, day_num: int):
         """Run cross-node integrity verification."""
         print(f"\n  -- Integrity Verification (Day {day_num}) --")
@@ -636,8 +1000,42 @@ class SimulationEngine:
         settlements_ok = "OK" if report.all_settlements_matched else "MISMATCH"
         print(f"  Chains: {chains_ok}  Settlements: {settlements_ok} "
               f"({report.settlements_checked} checked, {report.verification_time_ms:.0f}ms)")
+
+        # Check if a tamper event has fired — produce dramatic output
+        tamper_params = self.director.get_tamper_params() if self.director else None
+        if tamper_params and report.balance_drift:
+            tamper_bank = tamper_params['bank']
+            tamper_acct = tamper_params['account']
+            tamper_amt = tamper_params['amount']
+            has_drift = any(
+                tamper_acct in issue
+                for issues in report.balance_drift.values()
+                for issue in issues
+            )
+            if has_drift:
+                print()
+                print(f"  ╔══════════════════════════════════════════════════════╗")
+                print(f"  ║  !! TAMPER DETECTED — {tamper_bank}                      ║")
+                print(f"  ╠══════════════════════════════════════════════════════╣")
+                print(f"  ║  Account: {tamper_acct}                              ║")
+                print(f"  ║  DAT file balance: ${tamper_amt:>12,.2f}  (FORGED)    ║")
+                print(f"  ║  DB ledger balance: differs  (AUTHENTIC)             ║")
+                print(f"  ║                                                      ║")
+                print(f"  ║  The integrity layer caught what COBOL alone could   ║")
+                print(f"  ║  not. The DAT file was modified outside the chain.   ║")
+                print(f"  ╚══════════════════════════════════════════════════════╝")
+                print()
+
+                # Log the tamper detection
+                for bank in BANKS:
+                    self.logger.log(f"{bank}_INTERNAL",
+                        f"  !! TAMPER DETECTED on {tamper_bank}/{tamper_acct} — "
+                        f"DAT=${tamper_amt:,.2f} vs DB ledger")
+                self.logger.log('SETTLEMENT',
+                    f"  !! TAMPER DETECTED on {tamper_bank}/{tamper_acct}")
+                return
+
         if report.anomalies:
-            # Distinguish balance drift (expected from internal activity) from real anomalies
             for a in report.anomalies[:5]:
                 if 'balance' in a.lower() or 'drift' in a.lower() or 'mismatch' in a.lower():
                     print(f"  ~ {a[:70]} (expected — internal activity)")
@@ -664,6 +1062,18 @@ class SimulationEngine:
         """
         # Load account data
         self._load_accounts()
+
+        # Initialize scenario director
+        if self.scenarios and days is not None:
+            self.director = ScenarioDirector(total_days=days)
+            event_count = len(self.director.events)
+            print(f"  Scenarios: ON ({event_count} events scheduled)")
+            for e in self.director.events:
+                print(f"    Day {e.day:>3}: {e.event_type:<20} — {e.description[:50]}")
+            print()
+        elif self.scenarios:
+            # Continuous mode — use 365-day schedule
+            self.director = ScenarioDirector(total_days=365)
 
         # Set up graceful shutdown
         original_sigint = signal.getsignal(signal.SIGINT)
