@@ -474,19 +474,28 @@
                        END-IF
                        MOVE "WDR" TO WS-TYPE-DISPLAY
                    WHEN 'T'
-                       IF WS-A-BALANCE(WS-FOUND-IDX) < WS-IN-AMOUNT
-                           MOVE RC-NSF TO WS-RESULT-CODE
+      *>               Validate target exists before debiting source
+                       MOVE WS-FOUND-IDX TO WS-ACCT-IDX
+                       MOVE WS-IN-TARGET-ID TO WS-IN-ACCT-ID
+                       PERFORM FIND-ACCOUNT
+                       IF WS-FOUND-FLAG = 'N'
+                           MOVE RC-INVALID-ACCT TO WS-RESULT-CODE
+                           MOVE WS-ACCT-IDX TO WS-FOUND-IDX
                        ELSE
-                           SUBTRACT WS-IN-AMOUNT
-                               FROM WS-A-BALANCE(WS-FOUND-IDX)
-                           ADD WS-IN-AMOUNT TO WS-TOTAL-TRANSFERS
-                           MOVE WS-IN-TARGET-ID TO WS-IN-ACCT-ID
-                           PERFORM FIND-ACCOUNT
-                           IF WS-FOUND-FLAG = 'Y'
+                           IF WS-A-BALANCE(WS-ACCT-IDX) < WS-IN-AMOUNT
+                               MOVE RC-NSF TO WS-RESULT-CODE
+                               MOVE WS-ACCT-IDX TO WS-FOUND-IDX
+                           ELSE
+                               SUBTRACT WS-IN-AMOUNT
+                                   FROM WS-A-BALANCE(WS-ACCT-IDX)
                                ADD WS-IN-AMOUNT TO
                                    WS-A-BALANCE(WS-FOUND-IDX)
+                               ADD WS-IN-AMOUNT TO WS-TOTAL-TRANSFERS
+                               MOVE WS-ACCT-IDX TO WS-FOUND-IDX
                            END-IF
                        END-IF
+      *>               Restore source acct-id for display
+                       MOVE WS-A-ID(WS-FOUND-IDX) TO WS-IN-ACCT-ID
                        MOVE "XFR" TO WS-TYPE-DISPLAY
                    WHEN 'I'
                        ADD WS-IN-AMOUNT TO WS-A-BALANCE(WS-FOUND-IDX)

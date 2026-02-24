@@ -364,13 +364,13 @@ def verify(cross_node: bool, node: str, data_dir: str):
         click.echo("║  CROSS-NODE INTEGRITY VERIFICATION                          ║")
         click.echo("╠══════════════════════════════════════════════════════════════╣")
         click.echo("║                                                              ║")
-        click.echo("║  CHAIN INTEGRITY                                             ║")
+        click.echo("║  CHAIN INTEGRITY (SHA-256 hash linkage)                      ║")
 
         for n in ['BANK_A', 'BANK_B', 'BANK_C', 'BANK_D', 'BANK_E', 'CLEARING']:
             intact = report.chain_integrity.get(n, False)
             entries = report.chain_lengths.get(n, 0)
             status = "✓ INTACT" if intact else "✗ BROKEN"
-            click.echo(f"║    {n:<10} {entries:>3} entries   {status:<20}             ║")
+            click.echo(f"║    {n:<10} {entries:>4} entries   {status:<20}            ║")
 
         click.echo("║                                                              ║")
         click.echo("║  SETTLEMENT CROSS-REFERENCES                                 ║")
@@ -381,15 +381,38 @@ def verify(cross_node: bool, node: str, data_dir: str):
                    f"{report.settlements_mismatched} mismatched  ·  "
                    f"{report.settlements_orphaned} orphaned   ║")
 
+        # Balance drift section — detects DAT file tampering
+        if report.balance_drift:
+            drift_count = sum(len(v) for v in report.balance_drift.values())
+            tamper_detected = any(
+                'tamper' in issue.lower() for issues in report.balance_drift.values() for issue in issues
+            )
+            click.echo("║                                                              ║")
+            if tamper_detected:
+                click.echo(f"║  ⚠ BALANCE TAMPER DETECTED ({drift_count} account(s))                  ║")
+            else:
+                click.echo(f"║  BALANCE DRIFT ({drift_count} account(s))                               ║")
+            shown = 0
+            for drift_node, issues in report.balance_drift.items():
+                for issue in issues:
+                    if shown >= 3:
+                        remaining = drift_count - shown
+                        click.echo(f"║    ... and {remaining} more                                      ║")
+                        break
+                    display = issue[:56]
+                    click.echo(f"║    {display:<56} ║")
+                    shown += 1
+                if shown >= 3:
+                    break
+
+        # Real anomalies (chain breaks, settlement mismatches — not balance drift)
         if report.anomalies:
             click.echo("║                                                              ║")
             click.echo("║  ⚠ ANOMALIES DETECTED                                       ║")
             for anomaly in report.anomalies[:5]:
-                # Truncate long anomalies
                 display = anomaly[:56]
                 click.echo(f"║    {display:<56} ║")
 
-            # For tamper detection, add the dramatic "two witnesses" line
             for anomaly in report.anomalies:
                 if "chain hash mismatch" in anomaly:
                     click.echo("║                                                              ║")
@@ -398,8 +421,17 @@ def verify(cross_node: bool, node: str, data_dir: str):
 
         click.echo("║                                                              ║")
         click.echo("║  ─────────────────────────────────────────────────────────── ║")
-        if report.all_chains_intact and report.all_settlements_matched:
+        has_tamper = any(
+            'tamper' in issue.lower()
+            for issues in report.balance_drift.values() for issue in issues
+        ) if report.balance_drift else False
+
+        if has_tamper:
+            click.echo("║  ⚠ TAMPER DETECTED  ·  DAT/DB balance mismatch               ║")
+        elif report.all_chains_intact and report.all_settlements_matched:
             click.echo("║  ✓ ALL CHAINS INTACT  ·  ALL SETTLEMENTS MATCHED             ║")
+        elif report.all_chains_intact and not report.all_settlements_matched:
+            click.echo("║  ✓ CHAINS INTACT  ·  settlements have partials (NSF etc)     ║")
         else:
             issues = []
             if not report.all_chains_intact:

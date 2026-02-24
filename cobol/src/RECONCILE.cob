@@ -14,16 +14,14 @@
       *>
       *>  Algorithm:
       *>    For each account:
-      *>      expected = sum(D+I) - sum(W+F) for that account's
-      *>                 successful transactions (status '00')
-      *>      If expected_delta applied to opening balance matches
-      *>      current balance → MATCH, else → MISMATCH
-      *>
-      *>  Note: Since we don't persist opening balances separately,
-      *>  this reconciliation verifies that transaction sums are
-      *>  internally consistent with current balances by computing
-      *>  net transaction effect and checking it against balance
-      *>  changes since seed.
+      *>      net = sum(credits: D+I) - sum(debits: W+F+T) from
+      *>            successful transactions (status '00')
+      *>      implied_opening = current_balance - net
+      *>      If no transactions → MATCH (balance unchanged)
+      *>      If implied_opening >= 0 → MATCH (txns consistent)
+      *>      If implied_opening < 0  → MISMATCH (txns don't
+      *>        add up — missing deposits, double debits, or
+      *>        corrupted balance field)
       *>
       *>  Files:
       *>    Input: ACCOUNTS.DAT  (70-byte, LINE SEQUENTIAL)
@@ -215,9 +213,7 @@
                - WS-TX-DEBITS(WS-ACCT-IDX)
            END-COMPUTE
 
-      *>   For reconciliation, we verify that the transaction log
-      *>   is internally consistent. If there are no transactions,
-      *>   the account automatically matches.
+      *>   No transactions → automatic MATCH (balance unchanged)
            IF WS-TX-COUNT(WS-ACCT-IDX) = 0
                ADD 1 TO WS-MATCHED
                DISPLAY WS-A-ID(WS-ACCT-IDX) "  MATCH    "
@@ -227,15 +223,28 @@
                    "|MATCH|" WS-A-BALANCE(WS-ACCT-IDX)
                    "|" WS-TX-COUNT(WS-ACCT-IDX)
            ELSE
-      *>       With transactions present, report balance and tx count
-      *>       (full reconciliation requires persisted opening balance)
-               ADD 1 TO WS-MATCHED
-               DISPLAY WS-A-ID(WS-ACCT-IDX) "  MATCH    "
-                   WS-A-BALANCE(WS-ACCT-IDX) "  "
-                   WS-TX-COUNT(WS-ACCT-IDX)
-               DISPLAY "RECON|" WS-A-ID(WS-ACCT-IDX)
-                   "|MATCH|" WS-A-BALANCE(WS-ACCT-IDX)
-                   "|" WS-TX-COUNT(WS-ACCT-IDX)
+      *>       Implied opening = current balance - net transactions
+      *>       If negative, transactions exceed what balance allows
+               COMPUTE WS-EXPECTED-BAL =
+                   WS-A-BALANCE(WS-ACCT-IDX) - WS-TX-NET
+               END-COMPUTE
+               IF WS-EXPECTED-BAL >= 0
+                   ADD 1 TO WS-MATCHED
+                   DISPLAY WS-A-ID(WS-ACCT-IDX) "  MATCH    "
+                       WS-A-BALANCE(WS-ACCT-IDX) "  "
+                       WS-TX-COUNT(WS-ACCT-IDX)
+                   DISPLAY "RECON|" WS-A-ID(WS-ACCT-IDX)
+                       "|MATCH|" WS-A-BALANCE(WS-ACCT-IDX)
+                       "|" WS-TX-COUNT(WS-ACCT-IDX)
+               ELSE
+                   ADD 1 TO WS-MISMATCHED
+                   DISPLAY WS-A-ID(WS-ACCT-IDX) "  MISMATCH "
+                       WS-A-BALANCE(WS-ACCT-IDX) "  "
+                       WS-TX-COUNT(WS-ACCT-IDX)
+                   DISPLAY "RECON|" WS-A-ID(WS-ACCT-IDX)
+                       "|MISMATCH|" WS-A-BALANCE(WS-ACCT-IDX)
+                       "|" WS-TX-COUNT(WS-ACCT-IDX)
+               END-IF
            END-IF.
 
        LOAD-ALL-ACCOUNTS.

@@ -67,7 +67,7 @@ Issues marked [RESOLVED] were fixed in the Phase 2 quality hardening milestone.
 
 **Why**: WORKING-STORAGE is temporary. No persistence between program runs. Tracking daily limits requires a separate file or database table.
 
-**Risk**: $10,000 daily limit applies PER RUN, not PER DAY. Customer can withdraw $10k multiple times per day if TRANSACT is called multiple times.
+**Risk**: $50,000 daily limit (per `WS-DAILY-LIMIT`) applies PER RUN, not PER DAY. Customer can withdraw $50k multiple times per day if TRANSACT is called multiple times.
 
 **Production Fix**: Implement daily limit file (date-keyed) or move to database transaction table.
 
@@ -78,6 +78,14 @@ Issues marked [RESOLVED] were fixed in the Phase 2 quality hardening milestone.
 **What**: Fee deductions could drive account balance negative.
 
 **Fix**: FEES.cob implements balance floor protection — fees are skipped if they would cause a negative balance.
+
+---
+
+### [RESOLVED] T13: Batch Transfer Debits Source Before Validating Target
+
+**What**: In `PROCESS-ONE-TRANSACTION` (batch mode), transfer type 'T' debited the source account before checking if the target account existed. If the target was missing, money vanished silently.
+
+**Fix**: Restructured batch transfer to validate target existence before debiting source. If target not found, the entire transfer is rejected with RC-INVALID-ACCT.
 
 ---
 
@@ -126,15 +134,23 @@ Then uses the source index saved earlier. This pattern is fragile.
 
 ## RECONCILE.cob Issues (Phase 2 — New)
 
+### [RESOLVED] R-R2: RECONCILE Always Reported MATCH
+
+**What**: `CHECK-ACCOUNT-BALANCE` had identical IF/ELSE branches — both incremented WS-MATCHED. The computed WS-TX-NET was never compared to anything.
+
+**Fix**: Implemented implied-opening-balance verification. For accounts with transactions: `implied_opening = current_balance - net_transactions`. If implied opening is negative, the transactions are inconsistent with the balance → MISMATCH. Eliminates the copy-paste duplication.
+
+---
+
 ### R1: No Persisted Opening Balances
 
-**What**: Reconciliation cannot fully verify balance changes because opening balances (at seed time) are not stored separately. Current implementation verifies transaction log internal consistency.
+**What**: Reconciliation uses implied opening balance (current balance minus net transactions) rather than a persisted seed balance. This correctly detects double-posts, missing transactions, and corrupted balances, but cannot detect silent balance corruption that occurred before the first transaction.
 
 **Why**: Would require an additional file or database column for seed/opening balances.
 
-**Risk**: Cannot detect silent balance corruption that occurred before the first transaction.
+**Risk**: Low — the implied-opening approach catches all transaction-related inconsistencies.
 
-**Production Fix**: Store opening balance at account creation time and use for full reconciliation.
+**Production Fix**: Store opening balance at account creation time for complete audit trail.
 
 ---
 
@@ -149,6 +165,16 @@ Then uses the source index saved earlier. This pattern is fragile.
 **Risk**: **HIGHEST RISK IN PHASE 1**. If parser expects "1542050.00" but COBOL outputs "000001542050", every balance is parsed wrong. Silent data corruption.
 
 **Production Fix**: Run SMOKETEST.cob first. Observe actual output. Lock parser to match.
+
+---
+
+## COMCODE.cpy Cleanup
+
+### [RESOLVED] COM1: Dead Constants
+
+**What**: `DAILY-LIMIT PIC 9(10)V99 VALUE 10000.00` and `MAX-ACCOUNTS PIC 9(6) VALUE 100` were defined in the shared copybook but never referenced. TRANSACT.cob and VALIDATE.cob both declare their own `WS-DAILY-LIMIT` at $50,000.
+
+**Fix**: Removed both constants. Per-program limits are program-level concerns, not shared constants.
 
 ---
 

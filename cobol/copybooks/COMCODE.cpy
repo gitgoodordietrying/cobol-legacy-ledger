@@ -33,6 +33,3 @@
      05  TX-TRANSFER          PIC X(1) VALUE 'T'.
      05  TX-INTEREST          PIC X(1) VALUE 'I'.
      05  TX-FEE               PIC X(1) VALUE 'F'.
-
- 01  DAILY-LIMIT            PIC 9(10)V99 VALUE 10000.00.
- 01  MAX-ACCOUNTS           PIC 9(6) VALUE 100.
