@@ -48,6 +48,8 @@
       *>    2026-02-17  AKD  Initial implementation — Phase 1
       *>    2026-02-23  AKD  Production headers, dynamic dates,
       *>                     file status checks, copybook extraction
+      *>    2026-02-23  AKD  Fix UNSTRING parsing (multi-arg ops now
+      *>                     work: READ, CREATE, UPDATE, CLOSE)
       *>
       *>================================================================*
        IDENTIFICATION DIVISION.
@@ -68,6 +70,7 @@
 
        WORKING-STORAGE SECTION.
        01  WS-FILE-STATUS         PIC XX VALUE SPACES.
+       01  WS-CMD-LINE            PIC X(200) VALUE SPACES.
        01  WS-OPERATION           PIC X(10) VALUE SPACES.
        01  WS-IN-ACCT-ID          PIC X(10) VALUE SPACES.
        01  WS-IN-NAME             PIC X(30) VALUE SPACES.
@@ -82,25 +85,44 @@
        MAIN-PROGRAM.
            ACCEPT WS-CURRENT-DATE FROM DATE YYYYMMDD
            ACCEPT WS-CURRENT-TIME FROM TIME
-           ACCEPT WS-OPERATION FROM COMMAND-LINE
+           ACCEPT WS-CMD-LINE FROM COMMAND-LINE
+
+      *>   Parse all args from single command-line string
+      *>   (GnuCOBOL ACCEPT FROM COMMAND-LINE returns full string)
+      *>   For CREATE: "CREATE ACT-X-001 John_Doe C"
+      *>   For READ:   "READ ACT-T-001"
+      *>   For UPDATE: "UPDATE ACT-T-001 F"
+      *>   For CLOSE:  "CLOSE ACT-T-001"
+      *>   For LIST:   "LIST"
+           UNSTRING WS-CMD-LINE DELIMITED BY SPACE
+               INTO WS-OPERATION
+                    WS-IN-ACCT-ID
+                    WS-IN-NAME
+                    WS-IN-TYPE
+                    WS-IN-STATUS
+           END-UNSTRING
+           MOVE FUNCTION TRIM(WS-OPERATION) TO WS-OPERATION
+           MOVE FUNCTION TRIM(WS-IN-ACCT-ID) TO WS-IN-ACCT-ID
+           MOVE FUNCTION TRIM(WS-IN-NAME) TO WS-IN-NAME
+           MOVE FUNCTION TRIM(WS-IN-TYPE) TO WS-IN-TYPE
+           MOVE FUNCTION TRIM(WS-IN-STATUS) TO WS-IN-STATUS
+
+      *>   For UPDATE "UPDATE ACT-T-001 F": status lands in
+      *>   WS-IN-NAME (3rd UNSTRING field). Move it to WS-IN-STATUS.
+           IF WS-OPERATION = "UPDATE"
+               MOVE WS-IN-NAME(1:1) TO WS-IN-STATUS
+           END-IF
 
            EVALUATE WS-OPERATION
                WHEN "LIST"
                    PERFORM LIST-ACCOUNTS
                WHEN "CREATE"
-                   ACCEPT WS-IN-ACCT-ID FROM COMMAND-LINE
-                   ACCEPT WS-IN-NAME FROM COMMAND-LINE
-                   ACCEPT WS-IN-TYPE FROM COMMAND-LINE
                    PERFORM CREATE-ACCOUNT
                WHEN "READ"
-                   ACCEPT WS-IN-ACCT-ID FROM COMMAND-LINE
                    PERFORM READ-ACCOUNT
                WHEN "UPDATE"
-                   ACCEPT WS-IN-ACCT-ID FROM COMMAND-LINE
-                   ACCEPT WS-IN-STATUS FROM COMMAND-LINE
                    PERFORM UPDATE-ACCOUNT
                WHEN "CLOSE"
-                   ACCEPT WS-IN-ACCT-ID FROM COMMAND-LINE
                    PERFORM CLOSE-ACCOUNT
                WHEN OTHER
                    DISPLAY "RESULT|99"
