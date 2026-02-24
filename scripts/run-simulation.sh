@@ -50,17 +50,18 @@ fi
 run_cobol() {
   local WORKDIR="$1"
   local BINARY="$2"
-  local ARGS="$3"
+  shift 2
+  local ARGS="$@"
 
   if [ "$RUN_MODE" = "local" ]; then
     cd "$PROJECT_ROOT/$WORKDIR"
-    "$PROJECT_ROOT/cobol/bin/$BINARY" "$ARGS"
+    "$PROJECT_ROOT/cobol/bin/$BINARY" $ARGS
   else
     MSYS_NO_PATHCONV=1 docker run --rm \
       -v "$DOCKER_PROJECT_ROOT":/app \
       -w "/app/$WORKDIR" \
       "$IMAGE_NAME" \
-      "/app/cobol/bin/$BINARY" "$ARGS"
+      "/app/cobol/bin/$BINARY" $ARGS
   fi
 }
 
@@ -78,7 +79,7 @@ for DAY in $(seq 1 $DAYS); do
 
   # Phase 1: Each bank generates daily transactions
   for BANK in $BANKS; do
-    run_cobol "banks/$BANK" "SIMULATE" "$BANK $DAY"
+    run_cobol "banks/$BANK" "SIMULATE" "$BANK" "$DAY"
   done
 
   # Phase 2: Clearing house settles outbound transfers

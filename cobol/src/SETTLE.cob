@@ -34,6 +34,7 @@
       *>
       *>  Change Log:
       *>    2026-02-24  AKD  Initial implementation — Simulation
+      *>    2026-02-24  AKD  Fix: nostro NSF check before settlement
       *>
       *>================================================================*
        IDENTIFICATION DIVISION.
@@ -108,6 +109,7 @@
            PERFORM SAVE-ALL-ACCOUNTS
 
            DISPLAY "  Settlements:  " WS-STL-COUNT
+           DISPLAY "  Rejected:     " WS-STL-REJECTED
            DISPLAY "  Total volume: " WS-STL-TOTAL-VOL
            DISPLAY "=== END SETTLE DAY " WS-DAY-NUM " ==="
            DISPLAY ""
@@ -265,6 +267,16 @@
                EXIT PARAGRAPH
            END-IF
            MOVE WS-FOUND-IDX TO WS-STL-DST-IDX
+
+      *>   NSF check: source nostro must cover the transfer
+           IF WS-A-BALANCE(WS-STL-SRC-IDX) < WS-STL-AMOUNT
+               ADD 1 TO WS-STL-REJECTED
+               DISPLAY "REJECT: NSF nostro "
+                   WS-A-ID(WS-STL-SRC-IDX)
+                   " bal=" WS-A-BALANCE(WS-STL-SRC-IDX)
+                   " amt=" WS-STL-AMOUNT
+               EXIT PARAGRAPH
+           END-IF
 
       *>   3-leg settlement:
       *>   Leg 1: Debit source bank's nostro

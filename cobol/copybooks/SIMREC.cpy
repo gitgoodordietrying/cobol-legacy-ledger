@@ -44,6 +44,7 @@
      05  WS-STL-SEQ          PIC 9(5) VALUE 0.
      05  WS-STL-TOTAL-VOL    PIC S9(12)V99 VALUE 0.
      05  WS-STL-COUNT        PIC 9(5) VALUE 0.
+     05  WS-STL-REJECTED     PIC 9(5) VALUE 0.
      05  WS-STL-SOURCE-LTR   PIC X(1).
      05  WS-STL-DEST-LTR     PIC X(1).
      05  WS-STL-NOSTRO-ID    PIC X(10).

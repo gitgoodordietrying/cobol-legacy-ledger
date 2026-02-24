@@ -36,8 +36,13 @@
       *>    ACCTIO.cpy   — Account I/O working-storage
       *>    SIMREC.cpy   — Simulation parameters and counters
       *>
+      *>  Limits:
+      *>    Max 999 days, 999 transactions/bank/day (TRANS-ID: 12 chars)
+      *>
       *>  Change Log:
       *>    2026-02-24  AKD  Initial implementation — Simulation
+      *>    2026-02-24  AKD  Fix: target accts 1-8, frozen status 04,
+      *>                     WHEN OTHER error display
       *>
       *>================================================================*
        IDENTIFICATION DIVISION.
@@ -294,8 +299,14 @@
            END-IF
 
            IF WS-A-STATUS(WS-TARGET-IDX) NOT = 'A'
-               MOVE '03' TO WS-SIM-RESULT
-               MOVE "Transfer - target inactive" TO WS-SIM-DESC
+               IF WS-A-STATUS(WS-TARGET-IDX) = 'F'
+                   MOVE '04' TO WS-SIM-RESULT
+                   MOVE "Transfer - target frozen" TO WS-SIM-DESC
+               ELSE
+                   MOVE '03' TO WS-SIM-RESULT
+                   MOVE "Transfer - target inactive"
+                       TO WS-SIM-DESC
+               END-IF
                PERFORM WRITE-SIM-TRANSACTION
                ADD 1 TO WS-SIM-FAILED
            ELSE
@@ -364,12 +375,15 @@
                WHEN 3 MOVE 'C' TO WS-TARGET-BANK-LTR
                WHEN 4 MOVE 'D' TO WS-TARGET-BANK-LTR
                WHEN 5 MOVE 'E' TO WS-TARGET-BANK-LTR
-               WHEN OTHER MOVE 'A' TO WS-TARGET-BANK-LTR
+               WHEN OTHER
+                   DISPLAY "ERROR: Invalid target bank "
+                       WS-TARGET-BANK
+                   MOVE 'A' TO WS-TARGET-BANK-LTR
            END-EVALUATE
 
-      *>   Pick target account number (1-6)
+      *>   Pick target account number (1-8, covers all bank sizes)
            COMPUTE WS-TARGET-ACCT-NUM =
-               FUNCTION MOD(WS-SEED2 6) + 1
+               FUNCTION MOD(WS-SEED2 8) + 1
       *>   Build destination ID: ACT-X-00N
            MOVE SPACES TO WS-OB-DEST-ID
            STRING "ACT-" DELIMITED SIZE
