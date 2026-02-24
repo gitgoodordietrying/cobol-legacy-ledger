@@ -973,7 +973,13 @@ class COBOLBridge:
                 result["message"] = f"Error executing RECONCILE: {e}"
                 return result
 
-        # Mode B: Python-only reconciliation
+        # Mode B: Python-only reconciliation (mirrors RECONCILE.cob algorithm)
+        # For each account:
+        #   credits = sum of D+I amounts where status='00'
+        #   debits  = sum of W+F+T amounts where status='00'
+        #   net = credits - debits
+        #   implied_opening = current_balance - net
+        #   No txns → MATCH; implied_opening >= 0 → MATCH; else MISMATCH
         accounts = self.load_accounts_from_dat()
         cursor = self.db.execute("SELECT * FROM transactions WHERE status = '00'")
         transactions = [dict(row) for row in cursor.fetchall()]
@@ -983,10 +989,23 @@ class COBOLBridge:
 
         for acct in accounts:
             acct_txs = [t for t in transactions if t['account_id'] == acct['id']]
-            # All accounts pass reconciliation in basic mode
-            matched += 1
 
-        result["status"] = "00"
+            if not acct_txs:
+                # No transactions — balance is seed value, always MATCH
+                matched += 1
+                continue
+
+            credits = sum(t['amount'] for t in acct_txs if t['type'] in ('D', 'I'))
+            debits = sum(t['amount'] for t in acct_txs if t['type'] in ('W', 'F', 'T'))
+            net = credits - debits
+            implied_opening = acct['balance'] - net
+
+            if implied_opening >= 0:
+                matched += 1
+            else:
+                mismatched += 1
+
+        result["status"] = "00" if mismatched == 0 else "01"
         result["matched"] = matched
         result["mismatched"] = mismatched
         result["total"] = len(accounts)

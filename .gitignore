@@ -8,5 +8,6 @@ __pycache__/
 .api_keys
 *.egg-info/
 .DS_Store
+.test-tmp/
 .pytest_cache/
 *.log
