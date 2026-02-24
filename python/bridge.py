@@ -548,6 +548,13 @@ class COBOLBridge:
                            VALUES (?, ?, ?, ?, ?, ?, ?)""",
                         (tx_id, account_id, tx_type, amount, ts_now, description, "00")
                     )
+                    # Sync account balance from COBOL output to SQLite
+                    new_balance = result.get("new_balance")
+                    if new_balance is not None:
+                        self.db.execute(
+                            "UPDATE accounts SET balance = ? WHERE id = ?",
+                            (new_balance, account_id.strip())
+                        )
                     self.db.commit()
             return result
 
@@ -632,10 +639,69 @@ class COBOLBridge:
             "new_balance": new_balance
         }
 
+    # Canonical seed data — single source of truth for all 6 nodes.
+    # Used by seed_demo_data() to write fresh DAT files and populate SQLite.
+    SEED_ACCOUNTS = {
+        "BANK_A": [
+            ("ACT-A-001", "Maria Santos",      "C",    5000.00, "A", "20260217", "20260217"),
+            ("ACT-A-002", "James Wilson",       "S",   12500.00, "A", "20260217", "20260217"),
+            ("ACT-A-003", "Chen Liu",           "C",     850.50, "A", "20260217", "20260217"),
+            ("ACT-A-004", "Patricia Kumar",     "S",   25000.00, "A", "20260217", "20260217"),
+            ("ACT-A-005", "Robert Brown",       "C",    3200.00, "A", "20260217", "20260217"),
+            ("ACT-A-006", "Sophie Martin",      "S",   75000.00, "A", "20260217", "20260217"),
+            ("ACT-A-007", "David Garcia",       "C",    1500.00, "A", "20260217", "20260217"),
+            ("ACT-A-008", "Emma Johnson",       "S",   45000.00, "A", "20260217", "20260217"),
+        ],
+        "BANK_B": [
+            ("ACT-B-001", "Acme Manufacturing",   "C",  350000.00, "A", "20260217", "20260217"),
+            ("ACT-B-002", "Global Logistics",      "C",  125000.00, "A", "20260217", "20260217"),
+            ("ACT-B-003", "TechStart Ventures",    "S",  500000.00, "A", "20260217", "20260217"),
+            ("ACT-B-004", "Peninsula Holdings",    "C",   75000.00, "A", "20260217", "20260217"),
+            ("ACT-B-005", "NorthSide Insurance",   "C",  250000.00, "A", "20260217", "20260217"),
+            ("ACT-B-006", "Pacific Shipping",      "C",  180000.00, "A", "20260217", "20260217"),
+            ("ACT-B-007", "Greenfield Properties",  "S", 1000000.00, "A", "20260217", "20260217"),
+        ],
+        "BANK_C": [
+            ("ACT-C-001", "Lisa Wong",          "S",  150000.00, "A", "20260217", "20260217"),
+            ("ACT-C-002", "Michael O'Brien",    "C",   45000.00, "A", "20260217", "20260217"),
+            ("ACT-C-003", "Alicia Patel",       "S",  200000.00, "A", "20260217", "20260217"),
+            ("ACT-C-004", "Nina Kumar",         "S",  320000.00, "A", "20260217", "20260217"),
+            ("ACT-C-005", "Thomas Anderson",    "C",   25000.00, "A", "20260217", "20260217"),
+            ("ACT-C-006", "Rachel Green",       "S",  550000.00, "A", "20260217", "20260217"),
+            ("ACT-C-007", "Christopher Lee",    "C",   80000.00, "A", "20260217", "20260217"),
+            ("ACT-C-008", "Sophia Rivera",      "S",  400000.00, "A", "20260217", "20260217"),
+        ],
+        "BANK_D": [
+            ("ACT-D-001", "Westchester Trust Corp",  "C",  5000000.00, "A", "20260217", "20260217"),
+            ("ACT-D-002", "Birch Estate Partners",   "S", 12000000.00, "A", "20260217", "20260217"),
+            ("ACT-D-003", "Alpine Investment Club",  "C",   750000.00, "A", "20260217", "20260217"),
+            ("ACT-D-004", "Laurel Foundation",       "S",  2500000.00, "A", "20260217", "20260217"),
+            ("ACT-D-005", "Strategic Capital Fund",  "C",  8000000.00, "A", "20260217", "20260217"),
+            ("ACT-D-006", "Legacy Trust Settlement", "S", 15000000.00, "A", "20260217", "20260217"),
+        ],
+        "BANK_E": [
+            ("ACT-E-001", "Metro Community Fund",      "C", 1200000.00, "A", "20260217", "20260217"),
+            ("ACT-E-002", "Angela Rodriguez",          "C",   45000.00, "A", "20260217", "20260217"),
+            ("ACT-E-003", "SBA Loan Pool",             "S", 2500000.00, "A", "20260217", "20260217"),
+            ("ACT-E-004", "Marcus Thompson",           "S",  125000.00, "A", "20260217", "20260217"),
+            ("ACT-E-005", "Metro Food Bank",           "C",  500000.00, "A", "20260217", "20260217"),
+            ("ACT-E-006", "Urban Development Proj",    "S", 3000000.00, "A", "20260217", "20260217"),
+            ("ACT-E-007", "Women Entrepreneurs Fund",  "C",  750000.00, "A", "20260217", "20260217"),
+            ("ACT-E-008", "Youth Skills Initiative",   "S",  850000.00, "A", "20260217", "20260217"),
+        ],
+        "CLEARING": [
+            ("NST-BANK-A", "Nostro Account - BANK_A", "C", 10000000.00, "A", "20260217", "20260217"),
+            ("NST-BANK-B", "Nostro Account - BANK_B", "C", 10000000.00, "A", "20260217", "20260217"),
+            ("NST-BANK-C", "Nostro Account - BANK_C", "C", 10000000.00, "A", "20260217", "20260217"),
+            ("NST-BANK-D", "Nostro Account - BANK_D", "C", 10000000.00, "A", "20260217", "20260217"),
+            ("NST-BANK-E", "Nostro Account - BANK_E", "C", 10000000.00, "A", "20260217", "20260217"),
+        ],
+    }
+
     def seed_demo_data(self):
         """
-        Create demo account records and populate SQLite.
-        This is called during Phase 1 seeding (seed.sh wrapper).
+        Write fresh DAT files from canonical seed data and populate SQLite.
+        Always overwrites DAT to ensure clean state (no tampered leftovers).
         """
         # Ensure accounts table exists
         self.db.execute("""
@@ -662,7 +728,24 @@ class COBOLBridge:
         """)
         self.db.commit()
 
-        # Load from DAT file
+        # Write fresh DAT files from seed data (overwrites any tampered files)
+        seed = self.SEED_ACCOUNTS.get(self.node, [])
+        if seed:
+            accounts = []
+            for acct_id, name, acct_type, balance, status, open_date, last_activity in seed:
+                accounts.append({
+                    'id': acct_id, 'name': name, 'type': acct_type,
+                    'balance': balance, 'status': status,
+                    'open_date': open_date, 'last_activity': last_activity,
+                })
+            self._write_accounts_to_dat(accounts)
+
+            # Create empty TRANSACT.DAT if it doesn't exist
+            transact_file = self.data_dir / "TRANSACT.DAT"
+            if not transact_file.exists():
+                transact_file.touch()
+
+        # Sync DAT → SQLite
         self._sync_accounts_to_db()
 
     def run_interest_batch(self) -> Dict[str, Any]:
@@ -910,23 +993,27 @@ class COBOLBridge:
         return result
 
     def _write_accounts_to_dat(self, accounts: List[Dict[str, Any]]):
-        """Write accounts back to ACCOUNTS.DAT file (Mode B helper)."""
+        """Write accounts back to ACCOUNTS.DAT file (Mode B helper).
+        Produces exactly 70 bytes per record (ACCTREC layout)."""
         dat_file = self.data_dir / "ACCOUNTS.DAT"
-        with open(dat_file, 'w') as f:
+        with open(dat_file, 'wb') as f:
             for acct in accounts:
-                # Format balance as 12-char signed numeric with implied decimal
-                bal_cents = int(round(acct['balance'] * 100))
-                bal_str = f"{bal_cents:+013d}"  # +/- followed by 12 digits
-                line = (
-                    f"{acct['id']:<10}"
-                    f"{acct['name']:<30}"
-                    f"{acct['type']}"
-                    f"{bal_str}"
-                    f"{acct['status']}"
-                    f"{acct.get('open_date', '00000000'):<8}"
-                    f"{acct.get('last_activity', '00000000'):<8}"
+                # Format balance: PIC S9(10)V99 = 12 ASCII digits, implied decimal
+                # E.g., 5000.00 → "000000500000", -100.50 → "-00000010050"
+                bal_cents = int(round(abs(acct['balance']) * 100))
+                bal_str = f"{bal_cents:012d}"
+                if acct['balance'] < 0:
+                    bal_str = "-" + bal_str[1:]
+                record = (
+                    acct['id'].ljust(10)[:10].encode('ascii') +          # 10 bytes
+                    acct['name'].ljust(30)[:30].encode('ascii') +        # 30 bytes
+                    acct['type'].encode('ascii')[:1] +                   #  1 byte
+                    bal_str.encode('ascii') +                            # 12 bytes
+                    acct['status'].encode('ascii')[:1] +                 #  1 byte
+                    acct.get('open_date', '00000000').ljust(8)[:8].encode('ascii') +   # 8 bytes
+                    acct.get('last_activity', '00000000').ljust(8)[:8].encode('ascii') # 8 bytes
                 )
-                f.write(line + '\n')
+                f.write(record + b'\n')  # LINE SEQUENTIAL
 
     def close(self):
         """Close database connection."""

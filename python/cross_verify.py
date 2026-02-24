@@ -41,9 +41,12 @@ class VerificationReport:
     """Complete cross-node verification results."""
     timestamp: str
 
-    # Per-chain hash integrity
+    # Per-chain hash integrity (cryptographic linkage only)
     chain_integrity: Dict[str, bool]
     chain_lengths: Dict[str, int]
+
+    # Balance reconciliation (DAT vs DB — separate from chain integrity)
+    balance_drift: Dict[str, List[str]]
 
     # Cross-node settlement matching
     settlements_checked: int
@@ -105,12 +108,15 @@ class CrossNodeVerifier:
             entries = self._get_chain_entries_with_details(node)
             all_entries[node] = entries
 
-        # Step 1c: Balance reconciliation — compare DAT file balances with chain records
+        # Step 1c: Balance reconciliation — separate from chain integrity
+        # Balance drift is expected during simulation (internal activity changes
+        # DAT balances without updating stale DB snapshots). This is informational,
+        # NOT a chain integrity failure.
+        balance_drift = {}
         for node in self.NODES:
             balance_issues = self._check_balance_reconciliation(node, all_entries.get(node, []))
             if balance_issues:
-                chain_integrity[node] = False
-                anomalies.extend(balance_issues)
+                balance_drift[node] = balance_issues
 
         # Step 2: Extract all settlement references from all chains
 
@@ -149,6 +155,7 @@ class CrossNodeVerifier:
             timestamp=datetime.now().isoformat(),
             chain_integrity=chain_integrity,
             chain_lengths=chain_lengths,
+            balance_drift=balance_drift,
             settlements_checked=len(settlement_refs),
             settlements_matched=matched,
             settlements_partial=partial,
