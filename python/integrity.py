@@ -201,7 +201,9 @@ class IntegrityChain:
         start_time = datetime.now()
 
         cursor = self.db.execute(
-            "SELECT chain_index, tx_id, tx_hash, prev_hash, signature FROM chain_entries ORDER BY chain_index"
+            "SELECT chain_index, tx_id, account_id, tx_type, amount, "
+            "timestamp, description, status, tx_hash, prev_hash, signature "
+            "FROM chain_entries ORDER BY chain_index"
         )
         entries = cursor.fetchall()
 
@@ -218,10 +220,13 @@ class IntegrityChain:
 
         # ── O(n) Chain Walk ───────────────────────────────────────────
         # Start from GENESIS and verify each link in sequence.
+        # Three checks per entry: linkage, content hash, HMAC signature.
         # Early exit on first failure -- no need to check the rest.
         prev_hash = GENESIS_HASH
-        for idx, (chain_idx, tx_id, tx_hash, stored_prev_hash, signature) in enumerate(entries):
-            # Check 1: Chain linkage
+        for idx, (chain_idx, tx_id, account_id, tx_type, amount,
+                  timestamp, description, status, tx_hash,
+                  stored_prev_hash, signature) in enumerate(entries):
+            # Check 1: Chain linkage -- prev_hash must match previous entry's tx_hash
             if stored_prev_hash != prev_hash:
                 elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
                 return {
@@ -233,8 +238,24 @@ class IntegrityChain:
                     "details": f"Entry {chain_idx} prev_hash mismatch: expected {prev_hash}, got {stored_prev_hash}"
                 }
 
-            # Check 2: Hash mismatch (would require recomputing contents -- simplified for now)
-            # Check 3: Signature validity
+            # Check 2: Content hash -- recompute SHA-256 from stored fields
+            # and verify it matches the stored tx_hash. This catches edits
+            # to transaction fields (amount, description, etc.) even if
+            # the attacker preserved the chain linkage.
+            contents = f"{tx_id}|{account_id}|{tx_type}|{amount}|{timestamp}|{description}|{status}|{stored_prev_hash}"
+            expected_hash = hashlib.sha256(contents.encode()).hexdigest()
+            if tx_hash != expected_hash:
+                elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
+                return {
+                    "valid": False,
+                    "entries_checked": idx + 1,
+                    "time_ms": elapsed_ms,
+                    "first_break": chain_idx,
+                    "break_type": "content_hash_mismatch",
+                    "details": f"Entry {chain_idx} content hash mismatch: stored hash does not match recomputed hash"
+                }
+
+            # Check 3: HMAC Signature validity
             expected_sig = hmac.new(self.secret_key, tx_hash.encode(), hashlib.sha256).hexdigest()
             if signature != expected_sig:
                 elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000

@@ -35,7 +35,6 @@ Dependencies: bridge.py (for COBOL subprocess execution and output parsing)
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 from datetime import datetime
-import uuid
 from .bridge import COBOLBridge
 
 
@@ -179,7 +178,7 @@ class SettlementCoordinator:
             source_desc = f"XFER-TO-{dest_bank}-{dest_account}|{settlement_ref}"
             source_bridge = self.nodes[source_bank]
             source_result = source_bridge.process_transaction(
-                tx_type="WITHDRAW",
+                tx_type="W",  # Single-char code matching COBOL TRANSACT.cob convention
                 account_id=source_account,
                 amount=amount,
                 description=source_desc
@@ -207,7 +206,7 @@ class SettlementCoordinator:
             # Step 2a: CLEARING DEPOSIT (receive in source's nostro)
             clear_desc_deposit = f"SETTLE-{source_bank}-TO-{dest_bank}|{result.source_trx_id}|{settlement_ref}"
             clear_result_deposit = clearing_bridge.process_transaction(
-                tx_type="DEPOSIT",
+                tx_type="D",  # Deposit into source bank's nostro
                 account_id=NOSTRO_MAP[source_bank],
                 amount=amount,
                 description=clear_desc_deposit
@@ -224,7 +223,7 @@ class SettlementCoordinator:
             # Step 2b: CLEARING WITHDRAW (pay out from destination's nostro)
             clear_desc_withdraw = f"SETTLE-{source_bank}-TO-{dest_bank}|{result.source_trx_id}|{settlement_ref}"
             clear_result_withdraw = clearing_bridge.process_transaction(
-                tx_type="WITHDRAW",
+                tx_type="W",  # Withdraw from destination bank's nostro
                 account_id=NOSTRO_MAP[dest_bank],
                 amount=amount,
                 description=clear_desc_withdraw
@@ -233,7 +232,9 @@ class SettlementCoordinator:
             if clear_result_withdraw["status"] != "00":
                 result.status = "PARTIAL_FAILURE"
                 result.error = f"Step 2b (clearing withdraw) failed: {clear_result_withdraw.get('message', 'Unknown error')}"
-                result.steps_completed = 1  # Source debited, first clearing leg succeeded, second failed
+                # Steps completed = 2: Step 1 (source debit) + Step 2a (clearing deposit)
+                # succeeded. Step 2b failed, but 2a already modified the clearing ledger.
+                result.steps_completed = 2
                 return result
 
             result.clearing_withdraw_id = clear_result_withdraw.get("tx_id", "")
@@ -248,7 +249,7 @@ class SettlementCoordinator:
             dest_desc = f"XFER-FROM-{source_bank}-{source_account}|{settlement_ref}"
             dest_bridge = self.nodes[dest_bank]
             dest_result = dest_bridge.process_transaction(
-                tx_type="DEPOSIT",
+                tx_type="D",  # Deposit into destination account
                 account_id=dest_account,
                 amount=amount,
                 description=dest_desc
@@ -389,8 +390,8 @@ DEMO_SETTLEMENT_BATCH = [
     # Near-CTR threshold (compliance flag expected in COBOL output)
     {"source_bank": "BANK_A", "source_account": "ACT-A-002", "dest_bank": "BANK_C", "dest_account": "ACT-C-001", "amount": 9500.00, "description": "Large wire transfer"},
 
-    # Should fail: insufficient funds (COBOL will return status 01 = NSF)
-    {"source_bank": "BANK_D", "source_account": "ACT-D-004", "dest_bank": "BANK_A", "dest_account": "ACT-A-001", "amount": 50000.00, "description": "Oversized transfer - will fail"},
+    # Should fail: exceeds $50K daily limit (COBOL returns status 02)
+    {"source_bank": "BANK_D", "source_account": "ACT-D-004", "dest_bank": "BANK_A", "dest_account": "ACT-A-001", "amount": 50001.00, "description": "Oversized transfer - will fail"},
 
     # Reverse direction to create circular flow
     {"source_bank": "BANK_B", "source_account": "ACT-B-002", "dest_bank": "BANK_A", "dest_account": "ACT-A-001", "amount": 800.00, "description": "Refund"},

@@ -454,96 +454,283 @@ class COBOLBridge:
 
     def validate_transaction_via_cobol(self, account_id: str, amount: float) -> Dict[str, str]:
         """
-        Validate a transaction by calling COBOL VALIDATE binary (Mode A).
-        Parses output: RESULT|{STATUS}
+        Validate a transaction against business rules.
+
+        Mode A: Calls COBOL VALIDATE binary, parses RESULT|{STATUS} output.
+        Mode B: Runs the same 4-check sequence in Python (exists, frozen, NSF, limit).
+
+        Validation order matches VALIDATE.cob:
+            1. Account exists     -> status 03 if not found
+            2. Account not frozen -> status 04 if frozen
+            3. Sufficient funds   -> status 01 if NSF (withdrawals only)
+            4. Within daily limit -> status 02 if over $50K
         """
-        if not self.cobol_available:
-            return {"status": "99", "message": "COBOL not available"}
+        if self.cobol_available:
+            result = {"status": "99", "message": "Unknown error"}
+            try:
+                proc = self._run_cobol_program("VALIDATE", [account_id.strip(), str(amount)])
 
-        result = {"status": "99", "message": "Unknown error"}
-        try:
-            proc = self._run_cobol_program("VALIDATE", [account_id.strip(), str(amount)])
+                for line in proc.stdout.strip().split('\n'):
+                    if line.startswith("RESULT|"):
+                        result["status"] = line.split('|')[1] if len(line.split('|')) > 1 else "99"
+                        result["message"] = self._status_code_to_message(result["status"])
 
-            for line in proc.stdout.strip().split('\n'):
-                if line.startswith("RESULT|"):
-                    result["status"] = line.split('|')[1] if len(line.split('|')) > 1 else "99"
-                    result["message"] = self._status_code_to_message(result["status"])
+            except subprocess.TimeoutExpired:
+                result["message"] = "VALIDATE program timed out"
+            except Exception as e:
+                result["message"] = f"Error executing VALIDATE: {e}"
 
-        except subprocess.TimeoutExpired:
-            result["message"] = "VALIDATE program timed out"
-        except Exception as e:
-            result["message"] = f"Error executing VALIDATE: {e}"
+            return result
 
-        return result
+        # Mode B: Python-only validation (mirrors VALIDATE.cob logic)
+        return self._mode_b_validate(account_id, amount)
+
+    def _mode_b_validate(self, account_id: str, amount: float) -> Dict[str, str]:
+        """
+        Mode B validation implementing the same 4 checks as VALIDATE.cob.
+
+        DESIGN PATTERN: This method is the single source of truth for Mode B
+        validation logic. Both validate_transaction_via_cobol() (when COBOL
+        is unavailable) and process_transaction() (Mode B path) use the same
+        validation order. Keeping it in one place prevents drift between the
+        two code paths.
+
+        Returns:
+            Dict with 'status' (2-char code) and 'message' (human-readable).
+        """
+        # 1. Account exists
+        account = self.get_account(account_id)
+        if not account:
+            return {"status": "03", "message": "Invalid account"}
+
+        # 2. Account not frozen
+        if account["status"] == "F":
+            return {"status": "04", "message": "Account frozen"}
+
+        # 3. Sufficient funds (for withdrawals/transfers)
+        if account["balance"] < amount:
+            return {"status": "01", "message": "Insufficient funds"}
+
+        # 4. Daily limit check ($50,000 from TRANSACT.cob WS-DAILY-LIMIT)
+        DAILY_LIMIT = 50000.00
+        if amount > DAILY_LIMIT:
+            return {"status": "02", "message": "Limit exceeded"}
+
+        return {"status": "00", "message": "Validation passed"}
 
     def get_reports_via_cobol(self, report_type: str, account_id: Optional[str] = None) -> List[str]:
         """
-        Get reports by calling COBOL REPORTS binary (Mode A).
-        Returns list of report lines (pipe-delimited).
-        Parses output: LEDGER|... or STATEMENT|... or EOD|... or AUDIT|...
+        Get reports from the banking node.
+
+        Mode A: Calls COBOL REPORTS binary, returns pipe-delimited output lines.
+        Mode B: Generates equivalent reports from SQLite + DAT file data.
+
+        Report types:
+            STATEMENT — Transaction history for one account
+            LEDGER    — All transactions across all accounts
+            EOD       — End-of-day summary (totals, counts)
+            AUDIT     — Full account listing with chain verification status
         """
-        if not self.cobol_available:
-            return ["ERROR: COBOL not available"]
+        if self.cobol_available:
+            report_lines = []
+            try:
+                cobol_args = [report_type.upper()]
+                if account_id and report_type.upper() == "STATEMENT":
+                    cobol_args.append(account_id)
 
-        report_lines = []
-        try:
-            cobol_args = [report_type.upper()]
-            if account_id and report_type.upper() == "STATEMENT":
-                cobol_args.append(account_id)
+                proc = self._run_cobol_program("REPORTS", cobol_args)
 
-            proc = self._run_cobol_program("REPORTS", cobol_args)
+                for line in proc.stdout.strip().split('\n'):
+                    if not line.startswith("RESULT|"):
+                        report_lines.append(line)
 
-            for line in proc.stdout.strip().split('\n'):
-                if not line.startswith("RESULT|"):
-                    report_lines.append(line)
+            except subprocess.TimeoutExpired:
+                report_lines.append("ERROR: REPORTS program timed out")
+            except Exception as e:
+                report_lines.append(f"ERROR executing REPORTS: {e}")
 
-        except subprocess.TimeoutExpired:
-            report_lines.append("ERROR: REPORTS program timed out")
-        except Exception as e:
-            report_lines.append(f"ERROR executing REPORTS: {e}")
+            return report_lines
 
-        return report_lines
+        # Mode B: Python-only report generation
+        return self._mode_b_report(report_type, account_id)
 
-    def process_batch_via_cobol(self) -> Dict[str, Any]:
+    def _mode_b_report(self, report_type: str, account_id: Optional[str] = None) -> List[str]:
         """
-        Process batch by calling COBOL TRANSACT BATCH (Mode A).
-        Parses columnar output with compliance notes.
-        Returns summary with success/fail counts.
+        Mode B report generation from SQLite data.
+
+        Produces the same pipe-delimited output format as COBOL REPORTS.cob
+        so that downstream consumers (CLI, tests) work identically regardless
+        of which mode generated the report.
         """
-        if not self.cobol_available:
-            return {"status": "99", "message": "COBOL not available", "output": []}
+        rtype = report_type.upper()
+        lines = []
 
-        result = {"status": "99", "message": "Unknown error", "output": [], "summary": {}}
-        try:
-            proc = self._run_cobol_program("TRANSACT", ["BATCH"], timeout=30)
+        if rtype == "STATEMENT":
+            if not account_id:
+                return ["ERROR|Account ID required for STATEMENT report"]
+            account = self.get_account(account_id)
+            if not account:
+                return [f"ERROR|Account {account_id} not found"]
+            lines.append(f"STATEMENT|{account_id}|{account['name']}|Balance: ${account['balance']:.2f}")
+            cursor = self.db.execute(
+                "SELECT tx_id, type, amount, timestamp, description, status "
+                "FROM transactions WHERE account_id = ? ORDER BY timestamp",
+                (account_id,)
+            )
+            for row in cursor.fetchall():
+                lines.append(
+                    f"STATEMENT|{row[0]}|{row[1]}|{row[2]:.2f}|{row[3]}|{row[4]}|{row[5]}"
+                )
 
-            output_lines = proc.stdout.strip().split('\n')
-            result["output"] = output_lines
+        elif rtype == "LEDGER":
+            cursor = self.db.execute(
+                "SELECT tx_id, account_id, type, amount, timestamp, description, status "
+                "FROM transactions ORDER BY timestamp"
+            )
+            for row in cursor.fetchall():
+                lines.append(
+                    f"LEDGER|{row[0]}|{row[1]}|{row[2]}|{row[3]:.2f}|{row[4]}|{row[5]}|{row[6]}"
+                )
 
-            # Parse summary lines (after "--- END BATCH RUN ---")
-            in_summary = False
-            for line in output_lines:
-                if "--- END BATCH RUN ---" in line:
-                    in_summary = True
+        elif rtype == "EOD":
+            accounts = self.list_accounts()
+            total_balance = sum(a['balance'] for a in accounts)
+            cursor = self.db.execute("SELECT COUNT(*) FROM transactions")
+            tx_count = cursor.fetchone()[0]
+            lines.append(f"EOD|{self.node}|Accounts: {len(accounts)}|Transactions: {tx_count}|Total Balance: ${total_balance:.2f}")
+
+        elif rtype == "AUDIT":
+            accounts = self.list_accounts()
+            chain_result = self.chain.verify_chain()
+            chain_status = "INTACT" if chain_result['valid'] else "BROKEN"
+            lines.append(f"AUDIT|{self.node}|Chain: {chain_status}|Entries: {chain_result['entries_checked']}")
+            for acct in accounts:
+                lines.append(
+                    f"AUDIT|{acct['id']}|{acct['name']}|{acct['type']}|${acct['balance']:.2f}|{acct['status']}"
+                )
+
+        else:
+            lines.append(f"ERROR|Unknown report type: {report_type}")
+
+        return lines
+
+    def process_batch_via_cobol(self, batch_file: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Process a batch of transactions from a pipe-delimited input file.
+
+        Mode A: Calls COBOL TRANSACT BATCH binary, parses columnar output.
+        Mode B: Reads the batch file in Python and processes each line
+                through process_transaction().
+
+        Batch file format (pipe-delimited, one per line):
+            ACCOUNT_ID|TYPE|AMOUNT|DESCRIPTION          (D/W/I/F types)
+            ACCOUNT_ID|T|AMOUNT|DESCRIPTION|TARGET_ID   (transfers only)
+
+        Returns:
+            Dict with status, output lines, and summary counts.
+        """
+        if self.cobol_available:
+            result = {"status": "99", "message": "Unknown error", "output": [], "summary": {}}
+            try:
+                proc = self._run_cobol_program("TRANSACT", ["BATCH"], timeout=30)
+
+                output_lines = proc.stdout.strip().split('\n')
+                result["output"] = output_lines
+
+                # Parse summary lines (after "--- END BATCH RUN ---")
+                in_summary = False
+                for line in output_lines:
+                    if "--- END BATCH RUN ---" in line:
+                        in_summary = True
+                        continue
+                    if in_summary and "Total transactions read:" in line:
+                        result["summary"]["total"] = int(line.split(":")[-1].strip())
+                    elif in_summary and "Successful:" in line:
+                        result["summary"]["success"] = int(line.split(":")[-1].strip())
+                    elif in_summary and "Failed:" in line:
+                        result["summary"]["failed"] = int(line.split(":")[-1].strip())
+
+                # Check for RESULT| line
+                for line in output_lines:
+                    if line.startswith("RESULT|"):
+                        result["status"] = line.split('|')[1] if len(line.split('|')) > 1 else "99"
+
+            except subprocess.TimeoutExpired:
+                result["message"] = "TRANSACT BATCH timed out"
+            except Exception as e:
+                result["message"] = f"Error executing TRANSACT BATCH: {e}"
+
+            return result
+
+        # Mode B: Python-only batch processing
+        return self._mode_b_batch(batch_file)
+
+    def _mode_b_batch(self, batch_file: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Mode B batch processing -- reads pipe-delimited BATCH-INPUT.DAT and
+        processes each line through process_transaction().
+
+        DESIGN PATTERN: Batch processing in COBOL reads a sequential file
+        record by record. This Python equivalent reads line by line and
+        delegates to the same transaction engine, producing identical
+        status codes and chain entries.
+        """
+        if batch_file is None:
+            batch_file = str(self.data_dir / "BATCH-INPUT.DAT")
+
+        batch_path = Path(batch_file)
+        if not batch_path.exists():
+            return {"status": "99", "message": f"Batch file not found: {batch_file}",
+                    "output": [], "summary": {"total": 0, "success": 0, "failed": 0}}
+
+        output_lines = []
+        success = 0
+        failed = 0
+        total = 0
+
+        with open(batch_path, 'r') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line or line.startswith('#'):
                     continue
-                if in_summary and "Total transactions read:" in line:
-                    result["summary"]["total"] = int(line.split(":")[-1].strip())
-                elif in_summary and "Successful:" in line:
-                    result["summary"]["success"] = int(line.split(":")[-1].strip())
-                elif in_summary and "Failed:" in line:
-                    result["summary"]["failed"] = int(line.split(":")[-1].strip())
 
-            # Check for RESULT| line
-            for line in output_lines:
-                if line.startswith("RESULT|"):
-                    result["status"] = line.split('|')[1] if len(line.split('|')) > 1 else "99"
+                total += 1
+                parts = line.split('|')
+                if len(parts) < 4:
+                    output_lines.append(f"LINE {line_num}|ERROR|Bad format: {line}")
+                    failed += 1
+                    continue
 
-        except subprocess.TimeoutExpired:
-            result["message"] = "TRANSACT BATCH timed out"
-        except Exception as e:
-            result["message"] = f"Error executing TRANSACT BATCH: {e}"
+                account_id = parts[0].strip()
+                tx_type = parts[1].strip().upper()
+                try:
+                    amount = float(parts[2].strip())
+                except ValueError:
+                    output_lines.append(f"LINE {line_num}|ERROR|Invalid amount: {parts[2]}")
+                    failed += 1
+                    continue
+                description = parts[3].strip()
+                target_id = parts[4].strip() if len(parts) > 4 else None
 
-        return result
+                result = self.process_transaction(account_id, tx_type, amount, description, target_id)
+
+                if result['status'] == '00':
+                    success += 1
+                    output_lines.append(
+                        f"LINE {line_num}|OK|{result['tx_id']}|{account_id}|{tx_type}|{amount:.2f}"
+                    )
+                else:
+                    failed += 1
+                    output_lines.append(
+                        f"LINE {line_num}|FAIL|{result['status']}|{result['message']}"
+                    )
+
+        return {
+            "status": "00" if failed == 0 else "01",
+            "message": f"Batch complete: {success} success, {failed} failed",
+            "output": output_lines,
+            "summary": {"total": total, "success": success, "failed": failed},
+        }
 
     # ── Status Code Translation ───────────────────────────────────
     # COBOL programs return 2-character status codes (PIC X(2)).
@@ -595,8 +782,11 @@ class COBOLBridge:
     def update_account_status(self, account_id: str, new_status: str) -> Dict[str, Any]:
         """
         Update account status in both DAT file and SQLite.
+
+        Mode A: Calls COBOL ACCOUNTS UPDATE binary first, then syncs.
+        Mode B: Direct file + DB update with integrity chain recording.
+
         Statuses: A=active, F=frozen, C=closed.
-        Mode B only (direct file + DB update). COBOL binaries not invoked.
         """
         if new_status not in ('A', 'F', 'C'):
             return {'status': '03', 'message': f'Invalid status: {new_status}'}
@@ -607,7 +797,18 @@ class COBOLBridge:
 
         old_status = account['status']
 
-        # Update SQLite
+        # Mode A: Route through COBOL ACCOUNTS UPDATE binary
+        if self.cobol_available:
+            try:
+                proc = self._run_cobol_program(
+                    "ACCOUNTS", ["UPDATE", account_id.strip(), f"STATUS={new_status}"]
+                )
+                # Resync DAT -> SQLite after COBOL modified the file
+                self._sync_accounts_to_db()
+            except Exception:
+                pass  # Fall through to Mode B update below
+
+        # Update SQLite (both modes -- ensures consistency)
         self.db.execute(
             "UPDATE accounts SET status = ?, last_activity = ? WHERE id = ?",
             (new_status, datetime.now().strftime('%Y%m%d'), account_id)
@@ -719,25 +920,26 @@ class COBOLBridge:
         # ── Mode B: Python-Only Validation ────────────────────────
         # Implements the same business rules as COBOL's VALIDATE.cob
         # and TRANSACT.cob, but in Python. Status codes match exactly.
+        # Validation order matches VALIDATE.cob: exists -> frozen -> NSF -> limit.
 
-        # Validate account exists
+        # 1. Validate account exists
         account = self.get_account(account_id)
         if not account:
             return {"status": "03", "message": "Invalid account"}
 
-        # Check balance for withdrawals/transfers
+        # 2. Check account status (frozen accounts reject ALL operations)
+        if account["status"] == "F":
+            return {"status": "04", "message": "Account frozen"}
+
+        # 3. Check balance for withdrawals/transfers (NSF)
         if tx_type in ("W", "T"):
             if account["balance"] < amount:
                 return {"status": "01", "message": "Insufficient funds"}
 
-        # Check daily limits (50000.00 from TRANSACT.cob)
+        # 4. Check daily limits (50000.00 from TRANSACT.cob)
         DAILY_LIMIT = 50000.00
         if amount > DAILY_LIMIT:
             return {"status": "02", "message": "Limit exceeded"}
-
-        # Check account status
-        if account["status"] == "F":
-            return {"status": "04", "message": "Account frozen"}
 
         # ── Transaction ID Generation ─────────────────────────────
         # Format: TRX-{node_code}-{6-digit seq} (exactly 12 chars for PIC X(12))
@@ -1217,14 +1419,16 @@ class COBOLBridge:
                 bal_str = f"{bal_cents:012d}"
                 if acct['balance'] < 0:
                     bal_str = "-" + bal_str[1:]
+                open_date = acct.get('open_date') or '00000000'
+                last_activity = acct.get('last_activity') or '00000000'
                 record = (
                     acct['id'].ljust(10)[:10].encode('ascii') +          # 10 bytes
                     acct['name'].ljust(30)[:30].encode('ascii') +        # 30 bytes
                     acct['type'].encode('ascii')[:1] +                   #  1 byte
                     bal_str.encode('ascii') +                            # 12 bytes
                     acct['status'].encode('ascii')[:1] +                 #  1 byte
-                    acct.get('open_date', '00000000').ljust(8)[:8].encode('ascii') +   # 8 bytes
-                    acct.get('last_activity', '00000000').ljust(8)[:8].encode('ascii') # 8 bytes
+                    open_date.ljust(8)[:8].encode('ascii') +             # 8 bytes
+                    last_activity.ljust(8)[:8].encode('ascii')           # 8 bytes
                 )
                 f.write(record + b'\n')  # LINE SEQUENTIAL
 

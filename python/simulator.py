@@ -1083,7 +1083,8 @@ class SimulationEngine:
         print(summary_line)
 
         # Log EOD to all streams
-        self.logger.log_eod_summary('SETTLEMENT', day_completed - internal_done + external_done,
+        # SETTLEMENT stream only counts external (inter-bank) transactions
+        self.logger.log_eod_summary('SETTLEMENT', external_done,
                                      day_failed, day_volume)
         for bank in BANKS:
             self.logger.log_eod_summary(f'{bank}_INTERNAL', day_completed, day_failed, day_volume)

@@ -1,4 +1,4 @@
-fastapi==0.109.0
-uvicorn==0.27.0
 click==8.1.7
-pydantic==2.5.0
+
+# Dev dependencies (install with: pip install -r requirements.txt)
+pytest==8.0.0

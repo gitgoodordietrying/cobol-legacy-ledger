@@ -141,10 +141,18 @@ def get_account(node: str, account_id: str, data_dir: str):
 @click.option('--amount', prompt='Amount', type=float, help='Amount')
 @click.option('--description', prompt='Description', default='CLI transaction', help='Description')
 @click.option('--target-id', default=None, help='Target account (for transfers)')
+@click.option('--user', default='admin', help='User identity for RBAC (default: admin)')
 @click.option('--data-dir', default='COBOL-BANKING/data', help='Data directory')
 def transact(node: str, account_id: str, tx_type: str, amount: float, description: str,
-             target_id: str, data_dir: str):
+             target_id: str, user: str, data_dir: str):
     """Process a transaction."""
+    auth = get_auth_context(user)
+    try:
+        auth.require_permission("transactions.process")
+    except PermissionError as e:
+        click.echo(f"Access denied: {e}", err=True)
+        sys.exit(1)
+
     bridge = COBOLBridge(node=node, data_dir=data_dir)
 
     result = bridge.process_transaction(account_id, tx_type.upper(), amount, description, target_id)
@@ -162,6 +170,110 @@ def transact(node: str, account_id: str, tx_type: str, amount: float, descriptio
         }.get(result['status'], f"Error {result['status']}")
         click.echo(f"✗ {status_msg}: {result['message']}", err=True)
         sys.exit(1)
+
+
+# ── Validation ──────────────────────────────────────────────────
+# Pre-flight check: validate a transaction without executing it.
+
+@cli.command()
+@click.option('--node', default='BANK_A', help='Node identifier')
+@click.option('--account', required=True, help='Account to validate (e.g., ACT-A-001)')
+@click.option('--amount', type=float, required=True, help='Amount to validate')
+@click.option('--data-dir', default='COBOL-BANKING/data', help='Data directory')
+def validate(node: str, account: str, amount: float, data_dir: str):
+    """Validate a transaction without executing it.
+
+    Checks account existence, frozen status, balance, and daily limits.
+    Returns pass/fail with reason code.
+
+    Example: legacyledger validate --node BANK_A --account ACT-A-001 --amount 500.00
+    """
+    bridge = COBOLBridge(node=node, data_dir=data_dir)
+    result = bridge.validate_transaction_via_cobol(account, amount)
+    bridge.close()
+
+    if result['status'] == '00':
+        click.echo(f"✓ Validation passed: {account} can process ${amount:.2f}")
+    else:
+        click.echo(f"✗ Validation failed [{result['status']}]: {result['message']}")
+        sys.exit(1)
+
+
+# ── Reports ──────────────────────────────────────────────────────
+# Read-only reports generated from transaction and account data.
+
+@cli.command()
+@click.option('--node', default='BANK_A', help='Node identifier')
+@click.option('--type', 'report_type', type=click.Choice(['STATEMENT', 'LEDGER', 'EOD', 'AUDIT'],
+              case_sensitive=False), required=True, help='Report type')
+@click.option('--account', default=None, help='Account ID (required for STATEMENT)')
+@click.option('--data-dir', default='COBOL-BANKING/data', help='Data directory')
+def report(node: str, report_type: str, account: str, data_dir: str):
+    """Generate a report from node data.
+
+    Report types:
+        STATEMENT — Transaction history for one account (requires --account)
+        LEDGER    — All transactions across all accounts
+        EOD       — End-of-day summary
+        AUDIT     — Account listing with chain integrity status
+
+    Example: legacyledger report --node BANK_A --type STATEMENT --account ACT-A-001
+    """
+    if report_type.upper() == 'STATEMENT' and not account:
+        click.echo("Error: --account required for STATEMENT report", err=True)
+        sys.exit(1)
+
+    bridge = COBOLBridge(node=node, data_dir=data_dir)
+    lines = bridge.get_reports_via_cobol(report_type, account)
+    bridge.close()
+
+    click.echo(f"\n{node} {report_type.upper()} Report:")
+    click.echo("-" * 70)
+    for line in lines:
+        click.echo(f"  {line}")
+    click.echo("")
+
+
+# ── Batch Processing ────────────────────────────────────────────
+# Process a file of pipe-delimited transactions in one pass.
+
+@cli.command()
+@click.option('--node', default='BANK_A', help='Node identifier')
+@click.option('--file', 'batch_file', default=None, help='Batch file (default: BATCH-INPUT.DAT)')
+@click.option('--user', default='admin', help='User identity for RBAC (default: admin)')
+@click.option('--data-dir', default='COBOL-BANKING/data', help='Data directory')
+def batch(node: str, batch_file: str, user: str, data_dir: str):
+    """Process a batch of transactions from a pipe-delimited file.
+
+    File format (one per line):
+        ACCOUNT_ID|TYPE|AMOUNT|DESCRIPTION
+        ACCOUNT_ID|T|AMOUNT|DESCRIPTION|TARGET_ID  (transfers)
+
+    Example: legacyledger batch --node BANK_A --file transactions.dat
+    """
+    auth = get_auth_context(user)
+    try:
+        auth.require_permission("transactions.batch")
+    except PermissionError as e:
+        click.echo(f"Access denied: {e}", err=True)
+        sys.exit(1)
+
+    bridge = COBOLBridge(node=node, data_dir=data_dir)
+    result = bridge.process_batch_via_cobol(batch_file)
+    bridge.close()
+
+    summary = result.get('summary', {})
+    click.echo(f"\n{node} Batch Processing:")
+    click.echo(f"  Total:      {summary.get('total', 0)}")
+    click.echo(f"  Successful: {summary.get('success', 0)}")
+    click.echo(f"  Failed:     {summary.get('failed', 0)}")
+    click.echo(f"  Status:     {result['status']}")
+
+    if result.get('output'):
+        click.echo("\nDetails:")
+        for line in result['output']:
+            click.echo(f"  {line}")
+    click.echo("")
 
 
 # ── Integrity Verification ───────────────────────────────────────
@@ -202,12 +314,20 @@ def version():
 @click.option('--to', 'dest_spec', required=True, help='Destination: BANK_B:ACT-B-003')
 @click.option('--amount', type=float, required=True, help='Transfer amount')
 @click.option('--desc', default='', help='Description')
+@click.option('--user', default='admin', help='User identity for RBAC (default: admin)')
 @click.option('--data-dir', default='COBOL-BANKING/data', help='Data directory')
-def transfer(source_spec: str, dest_spec: str, amount: float, desc: str, data_dir: str):
+def transfer(source_spec: str, dest_spec: str, amount: float, desc: str, user: str, data_dir: str):
     """Execute a single inter-bank transfer.
 
     Example: legacyledger transfer --from BANK_A:ACT-A-001 --to BANK_B:ACT-B-003 --amount 500.00
     """
+    auth = get_auth_context(user)
+    try:
+        auth.require_permission("transactions.process")
+    except PermissionError as e:
+        click.echo(f"Access denied: {e}", err=True)
+        sys.exit(1)
+
     try:
         source_bank, source_acct = source_spec.split(':')
         dest_bank, dest_acct = dest_spec.split(':')
@@ -263,13 +383,21 @@ def transfer(source_spec: str, dest_spec: str, amount: float, desc: str, data_di
 
 
 @cli.command()
+@click.option('--user', default='admin', help='User identity for RBAC (default: admin)')
 @click.option('--data-dir', default='COBOL-BANKING/data', help='Data directory')
-def settle(data_dir: str):
+def settle(user: str, data_dir: str):
     """Execute demo batch settlement across all nodes.
 
     Runs 8 pre-defined transfers exercising all banks with normal, large,
     and failure scenarios. Shows balance before/after and calculates net positions.
     """
+    auth = get_auth_context(user)
+    try:
+        auth.require_permission("transactions.process")
+    except PermissionError as e:
+        click.echo(f"Access denied: {e}", err=True)
+        sys.exit(1)
+
     coordinator = SettlementCoordinator(data_dir=data_dir)
 
     click.echo("")
@@ -520,8 +648,9 @@ def verify(cross_node: bool, node: str, data_dir: str):
               help='Type of tamper')
 @click.option('--account', required=True, help='Account to tamper (e.g., ACT-A-001)')
 @click.option('--amount', type=float, required=True, help='New balance amount')
+@click.option('--user', default='admin', help='User identity for RBAC (default: admin)')
 @click.option('--data-dir', default='COBOL-BANKING/data', help='Data directory')
-def tamper_demo(node: str, tamper_type: str, account: str, amount: float, data_dir: str):
+def tamper_demo(node: str, tamper_type: str, account: str, amount: float, user: str, data_dir: str):
     """DEMO ONLY: Tamper with a node's data to demonstrate integrity detection.
 
     WARNING: This modifies .DAT files directly, bypassing COBOL and the integrity chain.
@@ -529,6 +658,13 @@ def tamper_demo(node: str, tamper_type: str, account: str, amount: float, data_d
 
     Example: tamper-demo --node BANK_A --account ACT-A-001 --amount 9999.99
     """
+    auth = get_auth_context(user)
+    try:
+        auth.require_permission("node.manage")
+    except PermissionError as e:
+        click.echo(f"Access denied: {e}", err=True)
+        sys.exit(1)
+
     click.echo("")
     click.echo("⚠  TAMPER DEMO — For demonstration purposes only")
     click.echo(f"   Modifying {node}/{account} balance to ${amount:.2f}")
@@ -617,8 +753,9 @@ def simulate(days, time_scale, tx_per_day, verify_every, seed, output_dir,
 
 @cli.command()
 @click.option('--node', required=True, help='Node identifier (e.g., BANK_A)')
+@click.option('--user', default='admin', help='User identity for RBAC (default: admin)')
 @click.option('--data-dir', default='COBOL-BANKING/data', help='Data directory')
-def interest(node: str, data_dir: str):
+def interest(node: str, user: str, data_dir: str):
     """Run interest accrual batch for a node.
 
     Posts monthly interest to all savings accounts based on tiered rates:
@@ -626,6 +763,13 @@ def interest(node: str, data_dir: str):
 
     Example: legacyledger interest --node BANK_A
     """
+    auth = get_auth_context(user)
+    try:
+        auth.require_permission("transactions.batch")
+    except PermissionError as e:
+        click.echo(f"Access denied: {e}", err=True)
+        sys.exit(1)
+
     bridge = COBOLBridge(node=node, data_dir=data_dir)
     result = bridge.run_interest_batch()
     bridge.close()
@@ -642,8 +786,9 @@ def interest(node: str, data_dir: str):
 
 @cli.command()
 @click.option('--node', required=True, help='Node identifier (e.g., BANK_A)')
+@click.option('--user', default='admin', help='User identity for RBAC (default: admin)')
 @click.option('--data-dir', default='COBOL-BANKING/data', help='Data directory')
-def fees(node: str, data_dir: str):
+def fees(node: str, user: str, data_dir: str):
     """Run fee assessment batch for a node.
 
     Assesses monthly maintenance ($12) and low-balance ($8) fees on
@@ -652,6 +797,13 @@ def fees(node: str, data_dir: str):
 
     Example: legacyledger fees --node BANK_A
     """
+    auth = get_auth_context(user)
+    try:
+        auth.require_permission("transactions.batch")
+    except PermissionError as e:
+        click.echo(f"Access denied: {e}", err=True)
+        sys.exit(1)
+
     bridge = COBOLBridge(node=node, data_dir=data_dir)
     result = bridge.run_fee_batch()
     bridge.close()
@@ -690,6 +842,245 @@ def reconcile(node: str, data_dir: str):
     else:
         click.echo(f"  Status:      {result['mismatched']} account(s) MISMATCH")
         sys.exit(1)
+
+
+# ── COBOL Code Generation ─────────────────────────────────────────
+# Bi-directional commands: parse, generate, edit, and validate COBOL source.
+
+@cli.command()
+@click.argument('filepath')
+def cobol_parse(filepath: str):
+    """Parse a COBOL source file and display its structure.
+
+    Shows divisions, file declarations, working-storage fields, and paragraphs.
+
+    Example: legacyledger cobol-parse COBOL-BANKING/src/SMOKETEST.cob
+    """
+    from .cobol_codegen import COBOLParser
+
+    parser = COBOLParser()
+    try:
+        program = parser.parse_file(filepath)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"\nProgram: {program.metadata.program_id}")
+    click.echo(f"  Copybooks: {', '.join(program.copybooks) or 'none'}")
+    click.echo("")
+
+    if program.files:
+        click.echo("  Files:")
+        for f in program.files:
+            click.echo(f"    {f.logical_name} -> {f.physical_name}")
+
+    if program.working_storage:
+        click.echo("  Working Storage:")
+        for item in program.working_storage:
+            pic_str = f" PIC {item.pic}" if item.pic else ""
+            click.echo(f"    {item.level:02d} {item.name}{pic_str}")
+            for cond in item.conditions:
+                click.echo(f"        88 {cond.name} VALUE '{cond.value}'")
+
+    if program.paragraphs:
+        click.echo("  Paragraphs:")
+        for para in program.paragraphs:
+            click.echo(f"    {para.name} ({len(para.statements)} statements)")
+
+    click.echo("")
+
+
+@cli.command()
+@click.option('--template', type=click.Choice(['crud', 'report', 'batch']),
+              required=True, help='Program template type')
+@click.option('--name', required=True, help='Program name (e.g., CUSTOMERS)')
+@click.option('--output', default=None, help='Output file (default: stdout)')
+def cobol_gen(template: str, name: str, output: str):
+    """Generate a new COBOL program from a template.
+
+    Templates:
+        crud   — Account-style CRUD program
+        report — Read-only report generator
+        batch  — Sequential file batch processor
+
+    Example: legacyledger cobol-gen --template crud --name CUSTOMERS --output CUSTOMERS.cob
+    """
+    from .cobol_codegen import COBOLGenerator, crud_program, report_program, batch_program
+
+    gen = COBOLGenerator()
+
+    if template == 'crud':
+        program = crud_program(
+            name=name.upper(),
+            record_copybook=f"{name.upper()}REC.cpy",
+            record_name=f"{name.upper()}-RECORD",
+            file_name=f"{name.upper()}.DAT",
+            id_field=f"{name.upper()}-ID",
+        )
+    elif template == 'report':
+        program = report_program(
+            name=name.upper(),
+            input_files=[{
+                'logical_name': f"{name.upper()}-FILE",
+                'physical_name': f"{name.upper()}.DAT",
+                'copybook': f"{name.upper()}REC.cpy",
+            }],
+            report_types=["SUMMARY", "DETAIL"],
+        )
+    elif template == 'batch':
+        program = batch_program(
+            name=name.upper(),
+            input_file=f"{name.upper()}-INPUT.DAT",
+            input_copybook=f"{name.upper()}REC.cpy",
+            record_name=f"{name.upper()}-RECORD",
+        )
+
+    source = gen.generate(program)
+
+    if output:
+        Path(output).write_text(source, encoding='utf-8')
+        click.echo(f"Generated {output} ({len(source)} bytes)")
+    else:
+        click.echo(source)
+
+
+def _find_parent_of(program, child_name: str):
+    """Find the parent group item that contains a child with the given name."""
+    from python.cobol_codegen.ast_nodes import DataItem
+
+    def _search(item: DataItem) -> str:
+        for child in item.children:
+            if child.name == child_name:
+                return item.name
+            found = _search(child)
+            if found:
+                return found
+        return None
+
+    for f in program.files:
+        for rec in f.record_fields:
+            found = _search(rec)
+            if found:
+                return found
+    for item in program.working_storage:
+        found = _search(item)
+        if found:
+            return found
+    return None
+
+
+@cli.command()
+@click.argument('filepath')
+@click.option('--add-field', nargs=2, default=None, help='Add field: NAME "PIC X(n)"')
+@click.option('--after', default=None, help='Insert after this field')
+@click.option('--remove-field', default=None, help='Remove field by name')
+@click.option('--rename-para', nargs=2, default=None, help='Rename paragraph: OLD NEW')
+@click.option('--output', default=None, help='Output file (default: overwrite)')
+def cobol_edit(filepath: str, add_field, after: str, remove_field: str,
+               rename_para, output: str):
+    """Apply an edit operation to an existing COBOL file.
+
+    Examples:
+        legacyledger cobol-edit ACCOUNTS.cob --add-field ACCT-EMAIL "X(50)" --after ACCT-NAME
+        legacyledger cobol-edit ACCOUNTS.cob --remove-field ACCT-EMAIL
+        legacyledger cobol-edit ACCOUNTS.cob --rename-para OLD-NAME NEW-NAME
+    """
+    from .cobol_codegen import COBOLParser, COBOLGenerator, COBOLEditor
+
+    parser = COBOLParser()
+    try:
+        program = parser.parse_file(filepath)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    editor = COBOLEditor()
+    result_msg = ""
+
+    if add_field:
+        name, pic = add_field
+        parent_name = None
+
+        # If --after is specified, find the parent that contains that field
+        if after:
+            parent_name = _find_parent_of(program, after)
+
+        # Otherwise, use heuristic: first file record, then first WS group
+        if not parent_name:
+            for f in program.files:
+                if f.record_fields:
+                    parent_name = f.record_fields[0].name
+                    break
+        if not parent_name:
+            for item in program.working_storage:
+                if item.is_group:
+                    parent_name = item.name
+                    break
+
+        if parent_name:
+            result_msg = editor.add_field(program, parent_name, name, pic, after=after)
+        else:
+            result_msg = "Error: no group item found to add field to"
+
+    elif remove_field:
+        result_msg = editor.remove_field(program, remove_field)
+
+    elif rename_para:
+        old_name, new_name = rename_para
+        result_msg = editor.rename_paragraph(program, old_name, new_name)
+
+    else:
+        click.echo("Error: specify an edit operation (--add-field, --remove-field, --rename-para)", err=True)
+        sys.exit(1)
+
+    click.echo(result_msg)
+
+    gen = COBOLGenerator()
+    source = gen.generate(program)
+    out_path = output or filepath
+    Path(out_path).write_text(source, encoding='utf-8')
+    click.echo(f"Written to {out_path}")
+
+
+@cli.command()
+@click.argument('filepath')
+def cobol_validate(filepath: str):
+    """Run convention validator on a COBOL file.
+
+    Checks naming conventions, PIC clause semantics, paragraph structure,
+    and other project-specific rules. Reports issues with severity.
+
+    Example: legacyledger cobol-validate COBOL-BANKING/src/ACCOUNTS.cob
+    """
+    from .cobol_codegen import COBOLParser, COBOLValidator
+
+    parser = COBOLParser()
+    try:
+        program = parser.parse_file(filepath)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    validator = COBOLValidator()
+    issues = validator.validate(program)
+
+    click.echo(f"\nValidation: {filepath}")
+    click.echo(f"  Program: {program.metadata.program_id}")
+    click.echo(f"  Issues:  {len(issues)}")
+    click.echo("")
+
+    if issues:
+        for issue in issues:
+            click.echo(f"  {issue}")
+        errors = sum(1 for i in issues if i.severity == "ERROR")
+        warnings = sum(1 for i in issues if i.severity == "WARNING")
+        click.echo(f"\n  {errors} error(s), {warnings} warning(s)")
+        if errors > 0:
+            sys.exit(1)
+    else:
+        click.echo("  All conventions met")
+
+    click.echo("")
 
 
 if __name__ == '__main__':

@@ -72,9 +72,13 @@ def test_bridge_initialization(bridge):
 # PIC S9(10)V99 means: 10 integer digits + 2 fractional digits, no decimal
 # point stored. "000001234567" means $12,345.67 (not $1,234,567).
 
-def test_parse_balance():
-    """Test parsing of PIC S9(10)V99 balance field."""
-    bridge = COBOLBridge(node="TEST", data_dir=".", bin_dir="COBOL-BANKING/bin")
+def test_parse_balance(temp_data_dir):
+    """Test parsing of PIC S9(10)V99 balance field.
+
+    Uses temp directory to avoid creating stray database files in the
+    working directory. The bridge needs a real directory for initialization.
+    """
+    bridge = COBOLBridge(node="TEST", data_dir=str(temp_data_dir), bin_dir="COBOL-BANKING/bin")
 
     # Test parsing: 12 bytes = 10 digits + 2 fractional
     # Value: 000001234567 -> 12345.67
@@ -288,6 +292,289 @@ def test_chain_is_recorded(bridge):
     chain_result = bridge.chain.verify_chain()
     assert chain_result['valid'] is True
     assert chain_result['entries_checked'] == 1
+
+
+# ── Interest Batch Tests (Mode B) ────────────────────────────────
+# Verify that monthly interest accrual applies correct tiered rates.
+
+def test_interest_batch_mode_b(bridge):
+    """Test Mode B interest accrual on savings accounts."""
+    bridge.seed_demo_data()
+
+    # Insert a savings account with $50K (middle tier: 1.50% APR)
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Savings Test", "S", 50000.00, "A")
+    )
+    bridge.db.commit()
+    bridge._write_accounts_to_dat([{
+        'id': 'ACT-T-001', 'name': 'Savings Test', 'type': 'S',
+        'balance': 50000.00, 'status': 'A', 'open_date': '20260217', 'last_activity': '20260217'
+    }])
+
+    result = bridge.run_interest_batch()
+
+    assert result['status'] == '00'
+    assert result['accounts_processed'] == 1
+    # 50000 * 0.015 / 12 = 62.50
+    assert abs(result['total_interest'] - 62.50) < 0.01
+
+
+def test_interest_skips_checking_accounts(bridge):
+    """Test that interest is NOT applied to checking accounts (type C)."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Checking Test", "C", 50000.00, "A")
+    )
+    bridge.db.commit()
+    bridge._write_accounts_to_dat([{
+        'id': 'ACT-T-001', 'name': 'Checking Test', 'type': 'C',
+        'balance': 50000.00, 'status': 'A', 'open_date': '20260217', 'last_activity': '20260217'
+    }])
+
+    result = bridge.run_interest_batch()
+
+    assert result['status'] == '00'
+    assert result['accounts_processed'] == 0
+    assert result['total_interest'] == 0.0
+
+
+# ── Fee Batch Tests (Mode B) ─────────────────────────────────────
+
+def test_fee_batch_mode_b(bridge):
+    """Test Mode B fee assessment on checking accounts."""
+    bridge.seed_demo_data()
+
+    # Checking account with $1000 (maintenance $12 + low-balance $8 = $20)
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Fee Test", "C", 1000.00, "A")
+    )
+    bridge.db.commit()
+    bridge._write_accounts_to_dat([{
+        'id': 'ACT-T-001', 'name': 'Fee Test', 'type': 'C',
+        'balance': 1000.00, 'status': 'A', 'open_date': '20260217', 'last_activity': '20260217'
+    }])
+
+    result = bridge.run_fee_batch()
+
+    assert result['status'] == '00'
+    assert result['accounts_assessed'] == 1
+    assert result['total_fees'] == 12.00  # >$500 so no low-balance fee
+
+
+def test_fee_waived_for_high_balance(bridge):
+    """Test that fees are waived when balance exceeds $5,000."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "High Balance", "C", 10000.00, "A")
+    )
+    bridge.db.commit()
+    bridge._write_accounts_to_dat([{
+        'id': 'ACT-T-001', 'name': 'High Balance', 'type': 'C',
+        'balance': 10000.00, 'status': 'A', 'open_date': '20260217', 'last_activity': '20260217'
+    }])
+
+    result = bridge.run_fee_batch()
+
+    assert result['status'] == '00'
+    assert result['accounts_assessed'] == 0
+    assert result['total_fees'] == 0.0
+
+
+# ── Reconciliation Tests (Mode B) ────────────────────────────────
+
+def test_reconciliation_match(bridge):
+    """Test reconciliation passes when balances match transaction history."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Recon Test", "C", 6000.00, "A")
+    )
+    bridge.db.commit()
+    bridge._write_accounts_to_dat([{
+        'id': 'ACT-T-001', 'name': 'Recon Test', 'type': 'C',
+        'balance': 6000.00, 'status': 'A', 'open_date': '20260217', 'last_activity': '20260217'
+    }])
+
+    # Deposit $1000 through the bridge
+    bridge.process_transaction("ACT-T-001", "D", 1000.00, "Deposit for recon")
+
+    result = bridge.run_reconciliation()
+
+    assert result['status'] == '00'
+    assert result['matched'] >= 1
+    assert result['mismatched'] == 0
+
+
+# ── Account Status Updates ───────────────────────────────────────
+
+def test_freeze_account(bridge):
+    """Test freezing an account updates status to F."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Freeze Test", "C", 5000.00, "A")
+    )
+    bridge.db.commit()
+
+    result = bridge.update_account_status("ACT-T-001", "F")
+
+    assert result['status'] == '00'
+    assert result['old_status'] == 'A'
+    assert result['new_status'] == 'F'
+
+    # Verify account is now frozen
+    account = bridge.get_account("ACT-T-001")
+    assert account['status'] == 'F'
+
+
+def test_frozen_account_rejects_transactions(bridge):
+    """Test that transactions are rejected on frozen accounts (status 04)."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Frozen Test", "C", 5000.00, "A")
+    )
+    bridge.db.commit()
+
+    # Freeze the account
+    bridge.update_account_status("ACT-T-001", "F")
+
+    # Try to deposit -- should fail with status 04
+    result = bridge.process_transaction("ACT-T-001", "D", 100.00, "Should fail")
+    assert result['status'] == '04'
+
+
+# ── Mode B Validate Tests ───────────────────────────────────────
+
+def test_validate_via_cobol_mode_b_pass(bridge):
+    """Test Mode B validation passes for valid transaction."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Validate Test", "C", 5000.00, "A")
+    )
+    bridge.db.commit()
+
+    result = bridge.validate_transaction_via_cobol("ACT-T-001", 100.00)
+    assert result['status'] == '00'
+
+
+def test_validate_via_cobol_mode_b_frozen(bridge):
+    """Test Mode B validation catches frozen account."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Frozen Validate", "C", 5000.00, "F")
+    )
+    bridge.db.commit()
+
+    result = bridge.validate_transaction_via_cobol("ACT-T-001", 100.00)
+    assert result['status'] == '04'
+
+
+def test_validate_via_cobol_mode_b_nonexistent(bridge):
+    """Test Mode B validation catches nonexistent account."""
+    bridge.seed_demo_data()
+
+    result = bridge.validate_transaction_via_cobol("NONEXISTENT", 100.00)
+    assert result['status'] == '03'
+
+
+# ── Mode B Reports Tests ────────────────────────────────────────
+
+def test_report_eod_mode_b(bridge):
+    """Test Mode B EOD report generation."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Report Test", "C", 5000.00, "A")
+    )
+    bridge.db.commit()
+
+    lines = bridge.get_reports_via_cobol("EOD")
+    assert len(lines) >= 1
+    assert any("EOD" in line for line in lines)
+
+
+def test_report_statement_mode_b(bridge):
+    """Test Mode B STATEMENT report for a specific account."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Statement Test", "C", 5000.00, "A")
+    )
+    bridge.db.commit()
+
+    bridge.process_transaction("ACT-T-001", "D", 100.00, "Deposit")
+
+    lines = bridge.get_reports_via_cobol("STATEMENT", "ACT-T-001")
+    assert len(lines) >= 1
+    assert any("STATEMENT" in line for line in lines)
+
+
+def test_report_audit_mode_b(bridge):
+    """Test Mode B AUDIT report includes chain status."""
+    bridge.seed_demo_data()
+    lines = bridge.get_reports_via_cobol("AUDIT")
+    assert len(lines) >= 1
+    assert any("AUDIT" in line and "Chain" in line for line in lines)
+
+
+# ── Mode B Batch Processing Tests ────────────────────────────────
+
+def test_batch_processing_mode_b(bridge, temp_data_dir):
+    """Test Mode B batch processing from pipe-delimited file."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Batch Test", "C", 5000.00, "A")
+    )
+    bridge.db.commit()
+
+    # Create a batch file
+    batch_file = temp_data_dir / "BANK_TEST" / "BATCH-INPUT.DAT"
+    batch_file.write_text("ACT-T-001|D|100.00|Deposit 1\nACT-T-001|D|200.00|Deposit 2\n")
+
+    result = bridge.process_batch_via_cobol(str(batch_file))
+
+    assert result['summary']['total'] == 2
+    assert result['summary']['success'] == 2
+    assert result['summary']['failed'] == 0
+
+
+def test_batch_processing_with_failures(bridge, temp_data_dir):
+    """Test batch processing handles bad lines gracefully."""
+    bridge.seed_demo_data()
+
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Batch Fail Test", "C", 100.00, "A")
+    )
+    bridge.db.commit()
+
+    # Second line will fail (withdrawal > balance)
+    batch_file = temp_data_dir / "BANK_TEST" / "BATCH-INPUT.DAT"
+    batch_file.write_text("ACT-T-001|D|50.00|Good deposit\nACT-T-001|W|9999.00|Too much\n")
+
+    result = bridge.process_batch_via_cobol(str(batch_file))
+
+    assert result['summary']['total'] == 2
+    assert result['summary']['success'] == 1
+    assert result['summary']['failed'] == 1
 
 
 if __name__ == '__main__':

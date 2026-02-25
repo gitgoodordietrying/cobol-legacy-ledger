@@ -2,6 +2,7 @@
 Tests for IntegrityChain — hash chain verification and tamper detection.
 """
 
+import os
 import pytest
 import sqlite3
 import tempfile
@@ -11,13 +12,19 @@ from ..integrity import IntegrityChain, ChainedTransaction
 
 @pytest.fixture
 def temp_db():
-    """Create a temporary SQLite database for testing."""
+    """Create a temporary SQLite database for testing.
+
+    PYTHON CONCEPT: tempfile.mkstemp() returns (fd, path) where fd is an
+    integer file descriptor. We must close the fd before SQLite can open
+    the file, otherwise the handle leaks. Path(fd) would create a nonsensical
+    path like "5" -- always use os.close(fd) instead.
+    """
     fd, path = tempfile.mkstemp(suffix='.db')
-    Path(fd).close() if hasattr(Path(fd), 'close') else None
+    os.close(fd)  # Close the raw file descriptor so SQLite can open the file
     db = sqlite3.connect(path)
     yield db
     db.close()
-    Path(path).unlink()
+    Path(path).unlink(missing_ok=True)
 
 
 @pytest.fixture
@@ -126,6 +133,30 @@ def test_get_chain_for_display(chain):
     assert display[0]['tx_id'] == "TRX-A-000001"
     assert len(display[0]['hash']) == 8  # Truncated to 8 chars
     assert len(display[0]['signature']) == 8
+
+
+def test_detect_content_tampering(chain, temp_db):
+    """Test that chain detects content field tampering (e.g., changed amount).
+
+    This verifies the content hash recomputation (Check 2 in verify_chain).
+    An attacker who modifies a transaction field (like amount) but preserves
+    the chain linkage will still be caught because the stored tx_hash no
+    longer matches SHA256(reconstructed_content).
+    """
+    tx1 = chain.append("TRX-A-000001", "ACT-A-001", "D", 1000.00, "2026-02-17T10:30:00", "Deposit 1", "00")
+
+    # Tamper: change the amount in the database (but leave hash/linkage intact)
+    temp_db.execute(
+        "UPDATE chain_entries SET amount = ? WHERE chain_index = ?",
+        (9999.00, 0)
+    )
+    temp_db.commit()
+
+    # Verify detects the content tampering
+    result = chain.verify_chain()
+    assert result['valid'] is False
+    assert result['break_type'] == 'content_hash_mismatch'
+    assert result['first_break'] == 0
 
 
 def test_chain_performance(chain):
