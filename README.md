@@ -3,7 +3,7 @@
 [![CI](https://github.com/gitgoodordietrying/cobol-legacy-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/gitgoodordietrying/cobol-legacy-ledger/actions/workflows/ci.yml)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests: 280](https://img.shields.io/badge/tests-280%20passing-brightgreen)
+![Tests: 321](https://img.shields.io/badge/tests-321%20passing-brightgreen)
 
 **A teaching resource for software engineers learning COBOL through a real banking system.**
 
@@ -184,7 +184,7 @@ python/                  Python observation layer — commented for integration 
     providers.py         Ollama (local) + Anthropic (cloud) providers
     conversation.py      Session management + tool-use loop
     audit.py             SQLite audit log for all tool invocations
-  tests/                 280 tests — all green
+  tests/                 321 tests — all green
 
 console/                 Web dashboard + chatbot UI (static HTML/CSS/JS)
   index.html             SPA shell — nav tabs, role selector, health dot
@@ -248,7 +248,7 @@ These are defined in `COBOL-BANKING/copybooks/COMCODE.cpy` and shared across all
 ## Running Tests
 
 ```bash
-python -m pytest python/tests/ -v    # 280 tests, all green
+python -m pytest python/tests/ -v    # 321 tests, all green
 ```
 
 ## License

@@ -25,4 +25,13 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run tests
-        run: python -m pytest python/tests/ -v
+        run: python -m pytest python/tests/ -v --tb=short
+
+      - name: Verify test count matches documentation
+        run: |
+          COUNT=$(python -m pytest python/tests/ --collect-only -q 2>/dev/null | tail -1 | grep -oP '^\d+')
+          echo "Tests collected: $COUNT"
+          if [ "$COUNT" -lt 321 ]; then
+            echo "ERROR: Expected at least 321 tests, got $COUNT"
+            exit 1
+          fi
