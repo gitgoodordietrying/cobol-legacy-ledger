@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "cobol-legacy-ledger"
+version = "3.0.0"
+description = "Educational COBOL banking system with Python integrity layer, REST API, and LLM tool-use integration"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    { name = "Albert Mendes" },
+]
+keywords = ["cobol", "banking", "education", "integrity", "settlement"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+]
+dependencies = [
+    "click>=8.1.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "httpx>=0.26.0",
+    "pydantic>=2.5.0",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.43.0"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.26.0",
+]
+
+[project.scripts]
+ledger = "python.cli:cli"
+
+[project.urls]
+Repository = "https://github.com/alertmendes/cobol-legacy-ledger"
+
+[tool.setuptools.packages.find]
+include = ["python*"]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+asyncio_mode = "auto"

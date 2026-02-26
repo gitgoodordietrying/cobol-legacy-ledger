@@ -1,5 +1,10 @@
 # COBOL Legacy Ledger
 
+[![CI](https://github.com/alertmendes/cobol-legacy-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/alertmendes/cobol-legacy-ledger/actions/workflows/ci.yml)
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Tests: 274](https://img.shields.io/badge/tests-274%20passing-brightgreen)
+
 **A teaching resource for software engineers learning COBOL through a real banking system.**
 
 > "COBOL isn't the problem. Lack of observability is."
@@ -36,7 +41,15 @@ This single command:
 5. **Tampers** one bank's ledger directly (bypassing COBOL and the integrity chain)
 6. **Detects** the tamper in <5ms via balance reconciliation
 
-No Docker required. Just GnuCOBOL + Python 3.8+. Falls back to Python-only mode if COBOL isn't installed.
+No Docker required. Just GnuCOBOL + Python 3.9+. Falls back to Python-only mode if COBOL isn't installed.
+
+### API Server
+
+```bash
+# Start the REST API (auto-docs at http://localhost:8000/docs)
+pip install -e ".[dev]"
+uvicorn python.api.app:app --reload
+```
 
 ## What You'll Learn
 
@@ -73,16 +86,33 @@ No Docker required. Just GnuCOBOL + Python 3.8+. Falls back to Python-only mode 
 | Fixed-width file I/O | Mode B: Python reads/writes DAT files | `python/bridge.py` |
 | SHA-256 hash chains | Cryptographic tamper detection | `python/integrity.py` |
 | Cross-node verification | Multi-node settlement matching | `python/cross_verify.py` |
+| REST API (FastAPI) | HTTP endpoints wrapping all operations | `python/api/` |
+| LLM tool-use | AI chatbot with RBAC-gated banking tools | `python/llm/` |
 
 ## Architecture
 
 ```
-BANK_A ─────┐                    ┌───── BANK_D
-BANK_B ─────┤◄── Settlement ──►├───── BANK_E
-BANK_C ─────┘    Coordinator     └───── CLEARING
-                      │
-                 SHA-256 chain
-                 per node (SQLite)
+                    ┌─────────────────────┐
+                    │   Layer 3: LLM/API  │
+                    │  FastAPI + Tool-Use │
+                    │  Ollama / Anthropic  │
+                    └─────────┬───────────┘
+                              │
+                    ┌─────────┴───────────┐
+                    │  Layer 2: Python     │
+                    │  Bridge + Integrity  │
+                    │  Settlement + RBAC   │
+                    └─────────┬───────────┘
+                              │
+BANK_A ─────┐                 │                ┌───── BANK_D
+BANK_B ─────┤◄── Settlement ──┤──────────────►├───── BANK_E
+BANK_C ─────┘    Coordinator  │                └───── CLEARING
+                              │
+                    ┌─────────┴───────────┐
+                    │  Layer 1: COBOL     │
+                    │  10 programs, DAT   │
+                    │  SHA-256 chain/node  │
+                    └─────────────────────┘
 ```
 
 **6 nodes** (5 banks + 1 clearing house), each with:
@@ -129,7 +159,20 @@ python/                  Python observation layer — commented for integration 
   cross_verify.py        Cross-node integrity verification + tamper detection
   simulator.py           Multi-day banking simulation engine
   cli.py                 Command-line interface (seed, transact, verify, simulate)
-  tests/                 27 tests — all green
+  auth.py                RBAC (4 roles, 16 permissions)
+  api/                   FastAPI REST layer
+    app.py               Application factory + CORS + exception handlers
+    routes_banking.py    Account, transaction, chain, settlement endpoints
+    routes_codegen.py    COBOL parse/generate/edit/validate endpoints
+    routes_chat.py       LLM chat with tool-use resolution
+    routes_health.py     System health check
+  llm/                   LLM tool-use layer
+    tools.py             12 tool definitions (Anthropic-compatible schema)
+    tool_executor.py     RBAC-gated dispatch to bridge/codegen
+    providers.py         Ollama (local) + Anthropic (cloud) providers
+    conversation.py      Session management + tool-use loop
+    audit.py             SQLite audit log for all tool invocations
+  tests/                 274 tests — all green
 
 docs/
   ARCHITECTURE.md        Full system topology, data flow, integrity model
@@ -156,7 +199,7 @@ scripts/
 
 ## Prerequisites
 
-- **Python 3.8+** (required)
+- **Python 3.9+** (required)
 - **GnuCOBOL 3.x** (optional — falls back to Python-only mode)
 
 ```bash
@@ -188,7 +231,7 @@ These are defined in `COBOL-BANKING/copybooks/COMCODE.cpy` and shared across all
 ## Running Tests
 
 ```bash
-python -m pytest python/tests/ -v    # 27 tests, all green
+python -m pytest python/tests/ -v    # 274 tests, all green
 ```
 
 ## License
