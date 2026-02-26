@@ -53,6 +53,8 @@ from typing import List, Dict, Tuple, Optional, TextIO
 from dataclasses import dataclass, field
 from math import ceil
 
+from typing import Callable
+
 from .settlement import SettlementCoordinator
 from .cross_verify import CrossNodeVerifier, tamper_balance
 
@@ -450,6 +452,10 @@ class SimulationEngine:
         self.coordinator = SettlementCoordinator(data_dir=data_dir)
         self._account_cache: Dict[str, List[Dict]] = {}
         self._stopped = False
+        self._paused = False
+
+        # Callback hooks for real-time event streaming (SSE, UI updates, etc.)
+        self._on_transaction_callbacks: List[Callable] = []
 
         # Scenario director (built when run() knows total days)
         self.director: Optional[ScenarioDirector] = None
@@ -473,6 +479,28 @@ class SimulationEngine:
         self._monthly_external_count: Dict[str, int] = {b: 0 for b in BANKS}
         self._fees_run_months: set = set()
         self._interest_run_months: set = set()
+
+    def register_callback(self, fn: Callable):
+        """Register a callback fired after each transaction.
+
+        The callback receives a dict with keys: type, bank, account, amount,
+        status, description, day, timestamp, and optionally dest_bank/dest_account
+        for external transfers. Used by the SSE endpoint to stream events.
+        """
+        self._on_transaction_callbacks.append(fn)
+
+    def _fire_callback(self, event: Dict):
+        """Invoke all registered callbacks with an event dict."""
+        for fn in self._on_transaction_callbacks:
+            try:
+                fn(event)
+            except Exception:
+                pass  # Callbacks must not break the simulation
+
+    def _wait_if_paused(self):
+        """Block while _paused is True, polling every 50ms."""
+        while self._paused and not self._stopped:
+            time.sleep(0.05)
 
     def _load_accounts(self):
         """Cache account lists from all banks."""
@@ -645,6 +673,15 @@ class SimulationEngine:
             bank, tx.get('account', tx.get('dest_account', '')),
             tx['amount'], result['status'], tx['description'], ''
         ])
+
+        # Fire callback for SSE streaming
+        self._fire_callback({
+            'type': tx['type'], 'bank': bank,
+            'account': tx.get('account', tx.get('source_account', '')),
+            'amount': tx['amount'], 'status': result['status'],
+            'description': tx['description'], 'day': day_num,
+            'timestamp': sim_time.isoformat(),
+        })
 
         return result['status']
 
@@ -933,6 +970,12 @@ class SimulationEngine:
             if handler:
                 handler(event, day_num)
                 event.fired = True
+                # Fire callback so SSE stream reports scenario events
+                self._fire_callback({
+                    'type': 'scenario', 'event_type': event.event_type,
+                    'description': event.description, 'day': day_num,
+                    'params': event.params,
+                })
 
     # ── Daily Simulation Loop ─────────────────────────────────────
     # Each simulated day generates a random number of transactions
@@ -988,6 +1031,11 @@ class SimulationEngine:
         external_done = 0
 
         for i, minutes_offset in enumerate(all_tx_times):
+            if self._stopped:
+                break
+
+            # Block while paused (responsive 50ms polling)
+            self._wait_if_paused()
             if self._stopped:
                 break
 
@@ -1058,6 +1106,17 @@ class SimulationEngine:
                     day_failed += 1
 
                 print(f"  {time_str}  {ref}  {src} -> {dst}  {amt:>12}  {status}")
+
+                # Fire callback for SSE streaming (external transfer)
+                self._fire_callback({
+                    'type': 'external', 'bank': transfer['source_bank'],
+                    'account': transfer['source_account'],
+                    'dest_bank': transfer['dest_bank'],
+                    'dest_account': transfer['dest_account'],
+                    'amount': transfer['amount'], 'status': result.status,
+                    'description': transfer['description'], 'day': day_num,
+                    'timestamp': sim_time.isoformat(), 'ref': ref,
+                })
 
                 # Log to settlement log
                 self.logger.log('SETTLEMENT',

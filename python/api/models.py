@@ -249,3 +249,51 @@ class HealthResponse(BaseModel):
     anthropic_configured: bool     # Whether ANTHROPIC_API_KEY is set
     db_status: str                 # "ok" or "no_data"
     version: str                   # API version (currently "3.0.0")
+
+
+# ── Simulation Models ────────────────────────────────────────────
+# Request/response schemas for the simulation engine control endpoints.
+
+class SimulationStartRequest(BaseModel):
+    """Request body for POST /api/simulation/start."""
+    days: int = Field(default=25, gt=0, le=365)    # Number of days to simulate
+    seed: Optional[int] = None                      # RNG seed for reproducibility
+    time_scale: int = Field(default=0, ge=0)        # 0=max speed, 3600=1s=1hr
+    scenarios: bool = True                          # Enable scripted events
+
+
+class SimulationStatusResponse(BaseModel):
+    """Response from GET /api/simulation/status."""
+    running: bool                  # True if simulation thread is active
+    paused: bool                   # True if simulation is paused
+    day: int                       # Current simulation day
+    completed: int                 # Total completed transactions
+    failed: int                    # Total failed transactions
+    volume: float                  # Total dollar volume processed
+
+
+class TransactionRecord(BaseModel):
+    """Single transaction row from a node's SQLite database."""
+    tx_id: str                     # TRANS-ID PIC X(12)
+    account_id: str                # ACCT-ID PIC X(10)
+    tx_type: str                   # D/W/T/I/F
+    amount: float                  # Transaction amount
+    timestamp: str                 # ISO 8601 timestamp
+    description: str               # TRANS-DESC PIC X(40)
+    status: str                    # COBOL status code (00, 01, etc.)
+
+
+class TamperDemoRequest(BaseModel):
+    """Request body for POST /api/tamper-demo."""
+    node: str = Field(default="BANK_C", pattern=r"^BANK_[A-E]$")
+    account_id: str = Field(default="ACT-C-001", pattern=r"^ACT-[A-E]-\d{3}$")
+    amount: float = Field(default=999999.99, gt=0)
+
+
+class TamperDemoResponse(BaseModel):
+    """Response from POST /api/tamper-demo."""
+    tampered: bool                 # True if tamper succeeded
+    node: str                      # Node that was tampered
+    account_id: str                # Account that was tampered
+    new_amount: float              # Forged balance
+    message: str                   # Human-readable summary

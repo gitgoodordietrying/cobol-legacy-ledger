@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>COBOL Legacy Ledger — Console</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <link rel="stylesheet" href="css/chat.css">
+</head>
+<body>
+
+  <!-- ── Navigation ────────────────────────────────────────────── -->
+  <nav class="nav">
+    <span class="nav__brand">COBOL Legacy Ledger</span>
+    <div class="nav__tabs">
+      <button class="nav__tab nav__tab--active" data-view="dashboard">Dashboard</button>
+      <button class="nav__tab" data-view="chat">Chat</button>
+    </div>
+    <div class="nav__spacer"></div>
+    <div class="health-dot" id="healthDot" title="API health"></div>
+    <select class="select" id="roleSelect" title="Active role">
+      <option value="admin">admin</option>
+      <option value="operator">operator</option>
+      <option value="auditor">auditor</option>
+      <option value="viewer" selected>viewer</option>
+    </select>
+  </nav>
+
+  <!-- ── Main Content ──────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- ═══ Dashboard View ═══════════════════════════════════════ -->
+    <section class="view view--active" id="view-dashboard">
+      <div class="dashboard-grid">
+
+        <!-- Controls Strip -->
+        <div class="dashboard-grid__controls glass controls" id="simControls">
+          <div class="controls__day" id="dayCounter">Day 0</div>
+          <div class="controls__divider"></div>
+
+          <div class="stat">
+            <span class="stat__value" id="statCompleted">0</span>
+            <span class="stat__label">OK</span>
+          </div>
+          <div class="stat">
+            <span class="stat__value" id="statFailed">0</span>
+            <span class="stat__label">Fail</span>
+          </div>
+          <div class="stat">
+            <span class="stat__value" id="statVolume">$0</span>
+            <span class="stat__label">Volume</span>
+          </div>
+
+          <div class="controls__divider"></div>
+
+          <label class="controls__group" title="Simulation days">
+            <span style="font-size: var(--text-xs); color: var(--text-muted);">Days</span>
+            <input type="number" class="input input--sm" id="daysInput" value="25" min="1" max="365">
+          </label>
+
+          <div class="controls__group">
+            <button class="btn btn--primary" id="btnStart">Start</button>
+            <button class="btn" id="btnPause" disabled>Pause</button>
+            <button class="btn btn--danger" id="btnStop" disabled>Stop</button>
+          </div>
+
+          <div class="controls__divider"></div>
+
+          <button class="btn btn--warning btn--sm" id="btnTamper" title="Tamper BANK_C balance">Tamper</button>
+          <button class="btn btn--success btn--sm" id="btnVerify" title="Cross-node verification">Verify</button>
+        </div>
+
+        <!-- Network Graph -->
+        <div class="dashboard-grid__graph glass network-graph" id="networkGraph">
+          <div class="glass__header">
+            <span>Network Topology</span>
+            <span class="badge badge--info" id="nodesOnline">6 nodes</span>
+          </div>
+          <div class="network-graph__svg-wrap" id="graphContainer"></div>
+        </div>
+
+        <!-- Sidebar: Event Feed + COBOL Viewer -->
+        <div class="dashboard-grid__sidebar">
+
+          <!-- Event Feed -->
+          <div class="glass event-feed" id="eventFeed">
+            <div class="glass__header">
+              <span>Event Feed</span>
+              <span class="badge" id="feedCount">0</span>
+            </div>
+            <div class="feed" id="feedList">
+              <div class="feed__empty">Start a simulation to see events</div>
+            </div>
+          </div>
+
+          <!-- COBOL Viewer -->
+          <div class="glass cobol-viewer" id="cobolViewer">
+            <div class="glass__header">
+              <span>COBOL Source</span>
+            </div>
+            <div class="cobol-viewer__controls">
+              <select class="select" id="cobolFileSelect">
+                <option value="SMOKETEST.cob">SMOKETEST.cob</option>
+                <option value="TRANSACT.cob">TRANSACT.cob</option>
+                <option value="ACCOUNTS.cob">ACCOUNTS.cob</option>
+                <option value="VALIDATE.cob">VALIDATE.cob</option>
+                <option value="SETTLE.cob">SETTLE.cob</option>
+                <option value="SIMULATE.cob">SIMULATE.cob</option>
+                <option value="INTEREST.cob">INTEREST.cob</option>
+                <option value="FEES.cob">FEES.cob</option>
+                <option value="RECONCILE.cob">RECONCILE.cob</option>
+                <option value="REPORTS.cob">REPORTS.cob</option>
+              </select>
+              <span class="badge" id="cobolParagraph">—</span>
+            </div>
+            <div class="cobol-viewer__source" id="cobolSource">
+              <span style="color: var(--text-muted)">Loading...</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ═══ Chat View ════════════════════════════════════════════ -->
+    <section class="view" id="view-chat">
+      <div class="chat-layout">
+
+        <!-- Sidebar -->
+        <aside class="chat-sidebar">
+          <div class="chat-sidebar__section">
+            <span class="chat-sidebar__label">Provider</span>
+            <div class="chat-sidebar__provider">
+              <span class="chat-sidebar__provider-dot health-dot" id="providerDot"></span>
+              <span id="providerName">ollama</span>
+            </div>
+            <div class="controls__group" style="gap: var(--sp-2);">
+              <button class="btn btn--sm" id="btnOllama">Ollama</button>
+              <button class="btn btn--sm" id="btnAnthropic">Anthropic</button>
+            </div>
+          </div>
+
+          <div class="chat-sidebar__section">
+            <span class="chat-sidebar__label">Role</span>
+            <span class="chat-sidebar__provider" id="chatRole" style="font-size: var(--text-xs);">viewer</span>
+          </div>
+
+          <div class="chat-sidebar__section" style="flex: 1; min-height: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="chat-sidebar__label">Sessions</span>
+              <button class="btn btn--sm btn--primary" id="btnNewChat">New</button>
+            </div>
+            <div class="session-list" id="sessionList">
+              <span style="font-size: var(--text-xs); color: var(--text-muted);">No sessions yet</span>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Chat Main -->
+        <div class="chat-main">
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-empty">
+              <div class="chat-empty__icon">&#9001;/&#9002;</div>
+              <span>Send a message to begin</span>
+              <span style="font-size: var(--text-xs); color: var(--text-muted);">
+                Try: "List all accounts in BANK_A" or "What is a nostro account?"
+              </span>
+            </div>
+          </div>
+
+          <div class="chat-input">
+            <div class="chat-input__form">
+              <textarea
+                class="chat-input__textarea"
+                id="chatInput"
+                placeholder="Ask about banking, COBOL, or run tools..."
+                rows="1"
+              ></textarea>
+              <button class="btn btn--primary chat-input__send" id="btnSend">Send</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Node Detail Popup (hidden by default) -->
+  <div class="popup-overlay" id="nodePopup" style="display: none;">
+    <div class="popup glass">
+      <div class="glass__header">
+        <div class="node-detail__header" id="nodePopupHeader"></div>
+        <button class="popup__close" id="nodePopupClose">&times;</button>
+      </div>
+      <div class="glass__body" id="nodePopupBody"></div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/utils.js"></script>
+  <script src="js/api-client.js"></script>
+  <script src="js/network-graph.js"></script>
+  <script src="js/cobol-viewer.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

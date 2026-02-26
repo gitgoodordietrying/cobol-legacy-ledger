@@ -21,8 +21,8 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 3. **Per-Node Database** — Each node has its own SQLite DB. No shared ledger.
 4. **6-Node Architecture** — Fixed: BANK_A, BANK_B, BANK_C, BANK_D, BANK_E, CLEARING.
 5. **Production COBOL** — Headers + KNOWN_ISSUES.md documentation required.
-6. **Testability** — Every requirement must be testable. 274 tests, all green.
-7. **No Node.js** — Static HTML/CSS/JS only. No npm, no build process.
+6. **Testability** — Every requirement must be testable. 280 tests, all green.
+7. **No Node.js** — Static HTML/CSS/JS only. No npm, no build process. Web console served via FastAPI StaticFiles at `/console/`.
 8. **Clear Error Paths** — Status codes: 00=success, 01=NSF, 02=limit, 03=invalid, 04=frozen, 99=error.
 9. **Educational Comments** — Every source file teaches concepts inline with `COBOL CONCEPT:` blocks. Layer 3 (API/LLM) files follow the same standard: 20-40 line module docstrings, `# ── Title ─────────` section banners, class/method docstrings, and inline comments on non-obvious lines.
 
@@ -67,8 +67,9 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 - `python/simulator.py` — Multi-day banking simulation engine
 - `python/cli.py` — Command-line interface (seed, transact, verify, simulate)
 - `python/auth.py` — RBAC (4 roles, 16 permissions)
-- `python/api/app.py` — FastAPI application factory
+- `python/api/app.py` — FastAPI application factory + static mounts
 - `python/api/routes_banking.py` — Account, transaction, chain, settlement endpoints
+- `python/api/routes_simulation.py` — Simulation control + SSE streaming + tamper demo
 - `python/api/routes_codegen.py` — COBOL parse/generate/edit/validate endpoints
 - `python/api/routes_chat.py` — LLM chat with tool-use resolution
 - `python/api/routes_health.py` — System health check
@@ -81,7 +82,23 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 - `python/api/README.md` — REST API endpoint reference, auth model, curl examples
 - `python/llm/README.md` — LLM tool catalog, provider comparison, audit schema
 - `python/cobol_codegen/README.md` — Pipeline diagram, template catalog, usage examples
-- `python/tests/` — 274 tests across 12 test files
+- `python/tests/` — 280 tests across 13 test files
+
+### Web Console (static HTML/CSS/JS, no Node.js)
+
+- `console/index.html` — SPA shell with nav tabs (Dashboard/Chat), role selector, health dot
+- `console/css/variables.css` — Design tokens, glass morphism recipe, per-bank colors
+- `console/css/layout.css` — Reset, body background, nav bar, grid layouts
+- `console/css/components.css` — Glass cards, buttons, badges, toggles, feed, toast
+- `console/css/dashboard.css` — Simulation controls, network graph, event feed, COBOL viewer
+- `console/css/chat.css` — Chat sidebar, message bubbles, tool call cards, input bar
+- `console/js/utils.js` — formatCurrency, escapeHtml, showToast, bankColor
+- `console/js/api-client.js` — Fetch wrapper with X-User/X-Role headers, SSE factory
+- `console/js/app.js` — SPA router (view switching), health check polling, module init
+- `console/js/network-graph.js` — SVG hub-and-spoke with 6 nodes, edge flash animations
+- `console/js/cobol-viewer.js` — COBOL source display with syntax highlighting
+- `console/js/dashboard.js` — Simulation controls, event feed, tamper demo, verify all
+- `console/js/chat.js` — LLM chatbot with provider switching and session management
 
 ### Documentation
 
@@ -139,7 +156,7 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 ## Verification
 
 ```bash
-# Run all 274 tests
+# Run all 280 tests
 python -m pytest python/tests/ -v
 
 # Full end-to-end proof

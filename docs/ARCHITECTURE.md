@@ -212,6 +212,39 @@ Providers are swappable at runtime via `POST /api/provider/switch`.
 | Banking | run_reconciliation | transactions.read |
 | Codegen | parse_cobol, generate_cobol, edit_cobol, validate_cobol | cobol.read |
 
+## Layer 4: Web Console
+
+### Dashboard + Chatbot SPA
+
+```
+Browser → /console/index.html → Static HTML/CSS/JS (no Node.js)
+                                        │
+                ┌───────────────────────┼───────────────────────┐
+                │                       │                       │
+          Dashboard View           Chat View              SSE Stream
+          ┌──────────┐          ┌──────────┐          ┌──────────┐
+          │ Network   │          │ Messages │          │ EventSource│
+          │ Graph     │          │ Tool     │          │ /api/sim  │
+          │ (SVG)     │          │ Cards    │          │ /events   │
+          │ Controls  │          │ Provider │          └──────────┘
+          │ Feed      │          │ Sessions │
+          │ COBOL     │          └──────────┘
+          │ Viewer    │
+          └──────────┘
+```
+
+**Architecture**: Static HTML/CSS/JS served via FastAPI `StaticFiles`. No build step, no npm. All API calls use `fetch()` with `X-User`/`X-Role` headers. SSE uses native `EventSource` with query-param auth.
+
+**Glass morphism design**: Dark void background (#0a0e1a), `backdrop-filter: blur(16px) saturate(180%)`, rgba borders, per-bank color palette.
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Network Graph | `network-graph.js` | SVG hub-and-spoke, 6 nodes, edge flash animations |
+| Dashboard | `dashboard.js` | Sim controls, event feed (SSE), stats, tamper/verify |
+| COBOL Viewer | `cobol-viewer.js` | Syntax highlighting, auto-navigation by tx type |
+| Chat | `chat.js` | LLM messages, tool call cards, provider switching |
+| API Client | `api-client.js` | Fetch wrapper with RBAC headers, SSE factory |
+
 ---
 
 ## COBOL Programs
