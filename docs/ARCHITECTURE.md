@@ -160,6 +160,60 @@ For every settlement reference found in any chain, the verifier checks:
 
 Missing or mismatched entries indicate deleted transactions, fabricated entries, or modified amounts.
 
+## Layer 3: REST API + LLM Tool-Use
+
+### API Layer (FastAPI)
+
+```
+HTTP Request → FastAPI Router → RBAC Check → Bridge/Settlement/Codegen → JSON Response
+                                    │
+                              X-User / X-Role
+                              request headers
+```
+
+The REST API wraps all existing bridge/settlement/integrity/codegen modules as HTTP endpoints. No new business logic — pure HTTP translation. Endpoints at `/api/nodes`, `/api/codegen`, `/api/settlement`, `/api/chat`, `/api/health`.
+
+### LLM Architecture
+
+```
+User Message → ConversationManager → LLM Provider → Tool Calls?
+                     │                                    │
+                     │                              ┌─────┴──────┐
+                     │                              │  Yes        │ No
+                     │                              ▼             ▼
+                     │                        ToolExecutor    Final Response
+                     │                         │  │  │  │
+                     │                     RBAC Validate Dispatch Audit
+                     │                              │
+                     │                        Bridge/Codegen
+                     │                              │
+                     └──── Tool Result ◄────────────┘
+```
+
+**Key design**: The LLM is a *client*, not a controller. It calls the same bridge/codegen methods the CLI calls, gated by RBAC. Every tool call is visible and auditable.
+
+### Provider Security Model
+
+| Provider | Security Level | Data Location | Configuration |
+|----------|---------------|---------------|---------------|
+| Ollama | LOCAL | Machine-local | Default, zero-trust |
+| Anthropic | CLOUD | API servers | Opt-in via ANTHROPIC_API_KEY |
+
+Providers are swappable at runtime via `POST /api/provider/switch`.
+
+### Tool Definitions (12 tools)
+
+| Category | Tools | Required Permission |
+|----------|-------|-------------------|
+| Banking | list_accounts, get_account | accounts.read |
+| Banking | process_transaction, transfer | transactions.process |
+| Banking | verify_chain, verify_all_nodes | chain.verify |
+| Banking | view_chain | chain.view |
+| Banking | run_reconciliation | transactions.read |
+| Codegen | parse_cobol, generate_cobol, edit_cobol, validate_cobol | cobol.read |
+
+---
+
 ## COBOL Programs
 
 | Program | Lines | Purpose |
