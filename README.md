@@ -3,7 +3,7 @@
 [![CI](https://github.com/alertmendes/cobol-legacy-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/alertmendes/cobol-legacy-ledger/actions/workflows/ci.yml)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests: 274](https://img.shields.io/badge/tests-274%20passing-brightgreen)
+![Tests: 280](https://img.shields.io/badge/tests-280%20passing-brightgreen)
 
 **A teaching resource for software engineers learning COBOL through a real banking system.**
 
@@ -43,13 +43,18 @@ This single command:
 
 No Docker required. Just GnuCOBOL + Python 3.9+. Falls back to Python-only mode if COBOL isn't installed.
 
-### API Server
+### API Server + Web Console
 
 ```bash
-# Start the REST API (auto-docs at http://localhost:8000/docs)
+# Start the REST API + web console (auto-docs at http://localhost:8000/docs)
 pip install -e ".[dev]"
 uvicorn python.api.app:app --reload
+# Open http://localhost:8000/ → redirects to the web console
 ```
+
+The **web console** at `http://localhost:8000/console/` provides:
+- **Dashboard** — Hub-and-spoke network graph, simulation controls (start/pause/stop), real-time event feed via SSE, and a COBOL source viewer with syntax highlighting
+- **Chat** — LLM chatbot with tool-use cards, provider switching (Ollama/Anthropic), and session management
 
 ## What You'll Learn
 
@@ -93,6 +98,12 @@ uvicorn python.api.app:app --reload
 
 ```
                     ┌─────────────────────┐
+                    │  Layer 4: Console   │
+                    │  Glass Morphism UI  │
+                    │  Dashboard + Chat   │
+                    └─────────┬───────────┘
+                              │
+                    ┌─────────┴───────────┐
                     │   Layer 3: LLM/API  │
                     │  FastAPI + Tool-Use │
                     │  Ollama / Anthropic  │
@@ -161,8 +172,9 @@ python/                  Python observation layer — commented for integration 
   cli.py                 Command-line interface (seed, transact, verify, simulate)
   auth.py                RBAC (4 roles, 16 permissions)
   api/                   FastAPI REST layer
-    app.py               Application factory + CORS + exception handlers
+    app.py               Application factory + static mounts + exception handlers
     routes_banking.py    Account, transaction, chain, settlement endpoints
+    routes_simulation.py Simulation control + SSE streaming + tamper demo
     routes_codegen.py    COBOL parse/generate/edit/validate endpoints
     routes_chat.py       LLM chat with tool-use resolution
     routes_health.py     System health check
@@ -172,7 +184,12 @@ python/                  Python observation layer — commented for integration 
     providers.py         Ollama (local) + Anthropic (cloud) providers
     conversation.py      Session management + tool-use loop
     audit.py             SQLite audit log for all tool invocations
-  tests/                 274 tests — all green
+  tests/                 280 tests — all green
+
+console/                 Web dashboard + chatbot UI (static HTML/CSS/JS)
+  index.html             SPA shell — nav tabs, role selector, health dot
+  css/                   Glass morphism design system (5 files)
+  js/                    Modular vanilla JS (7 files: app, API client, graph, viewer, dashboard, chat, utils)
 
 docs/
   ARCHITECTURE.md        Full system topology, data flow, integrity model
