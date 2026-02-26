@@ -251,15 +251,17 @@ Browser → /console/index.html → Static HTML/CSS/JS (no Node.js)
 
 | Program | Lines | Purpose |
 |---------|-------|---------|
-| `ACCOUNTS.cob` | 251 | Account lifecycle: CREATE, READ, UPDATE, CLOSE, LIST |
-| `TRANSACT.cob` | 545 | Transaction engine: DEPOSIT, WITHDRAW, TRANSFER, BATCH |
-| `VALIDATE.cob` | 175 | Business rules: status, balance, and limit checks |
-| `REPORTS.cob` | 243 | Reporting: STATEMENT, LEDGER, EOD, AUDIT |
-| `INTEREST.cob` | 276 | Monthly interest accrual for savings accounts |
-| `FEES.cob` | 305 | Monthly maintenance fee processing |
-| `RECONCILE.cob` | 276 | Transaction-to-balance reconciliation |
-| `SMOKETEST.cob` | 95 | Compilation verification |
-| **Total** | **2,166** | |
+| `TRANSACT.cob` | 677 | Transaction engine: DEPOSIT, WITHDRAW, TRANSFER, BATCH |
+| `SIMULATE.cob` | 497 | Deterministic daily transaction generator |
+| `SETTLE.cob` | 392 | 3-leg inter-bank clearing house settlement |
+| `ACCOUNTS.cob` | 383 | Account lifecycle: CREATE, READ, UPDATE, CLOSE, LIST |
+| `FEES.cob` | 344 | Monthly maintenance fee processing |
+| `RECONCILE.cob` | 334 | Transaction-to-balance reconciliation |
+| `INTEREST.cob` | 321 | Monthly interest accrual for savings accounts |
+| `REPORTS.cob` | 294 | Reporting: STATEMENT, LEDGER, EOD, AUDIT |
+| `SMOKETEST.cob` | 239 | Compilation verification — START HERE for learning |
+| `VALIDATE.cob` | 218 | Business rules: status, balance, and limit checks |
+| **Total** | **3,699** | |
 
 All programs share copybooks: `ACCTREC.cpy` (account record), `TRANSREC.cpy` (transaction record), `COMCODE.cpy` (status codes and constants).
 
@@ -267,13 +269,14 @@ All programs share copybooks: `ACCTREC.cpy` (account record), `TRANSREC.cpy` (tr
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
-| `bridge.py` | 1,021 | COBOL subprocess execution, DAT file I/O, SQLite sync |
-| `integrity.py` | 180 | SHA-256 hash chain + HMAC verification |
-| `settlement.py` | 330 | 3-step inter-bank settlement coordinator |
-| `cross_verify.py` | 382 | Cross-node integrity verification + tamper detection |
-| `simulator.py` | 704 | Multi-day banking simulation engine |
-| `cli.py` | 630 | Command-line interface |
-| **Total** | **3,376** | |
+| `bridge.py` | 1,438 | COBOL subprocess execution, DAT file I/O, SQLite sync |
+| `simulator.py` | 1,284 | Multi-day banking simulation engine |
+| `cli.py` | 1,087 | Command-line interface |
+| `cross_verify.py` | 469 | Cross-node integrity verification + tamper detection |
+| `settlement.py` | 398 | 3-step inter-bank settlement coordinator |
+| `integrity.py` | 305 | SHA-256 hash chain + HMAC verification |
+| `auth.py` | 192 | RBAC — 4 roles, 16 permissions |
+| **Total** | **5,173** | |
 
 ## Verification Performance
 

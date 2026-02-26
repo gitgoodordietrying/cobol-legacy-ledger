@@ -1,6 +1,6 @@
 # COBOL Legacy Ledger
 
-[![CI](https://github.com/alertmendes/cobol-legacy-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/alertmendes/cobol-legacy-ledger/actions/workflows/ci.yml)
+[![CI](https://github.com/gitgoodordietrying/cobol-legacy-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/gitgoodordietrying/cobol-legacy-ledger/actions/workflows/ci.yml)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Tests: 280](https://img.shields.io/badge/tests-280%20passing-brightgreen)
@@ -34,7 +34,7 @@ The **[Glossary](docs/GLOSSARY.md)** defines every COBOL keyword, banking term, 
 
 This single command:
 
-1. **Compiles** 10 COBOL programs (2,200+ lines of production-style banking code)
+1. **Compiles** 10 COBOL programs (3,600+ lines of production-style banking code)
 2. **Seeds** 6 independent banking nodes (42 accounts, $100M+ in balances)
 3. **Settles** an inter-bank transfer: Alice@BANK_A pays Bob@BANK_B $2,500 through the clearing house
 4. **Verifies** all SHA-256 hash chains intact across the network
@@ -248,7 +248,7 @@ These are defined in `COBOL-BANKING/copybooks/COMCODE.cpy` and shared across all
 ## Running Tests
 
 ```bash
-python -m pytest python/tests/ -v    # 274 tests, all green
+python -m pytest python/tests/ -v    # 280 tests, all green
 ```
 
 ## License
