@@ -3,7 +3,7 @@
 [![CI](https://github.com/gitgoodordietrying/cobol-legacy-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/gitgoodordietrying/cobol-legacy-ledger/actions/workflows/ci.yml)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests: 321](https://img.shields.io/badge/tests-321%20passing-brightgreen)
+![Tests: 372](https://img.shields.io/badge/tests-372%20passing-brightgreen)
 
 **A teaching resource for software engineers learning COBOL through a real banking system.**
 
@@ -57,13 +57,10 @@ The **web console** at `http://localhost:8000/console/` provides:
 - **Chat** — LLM chatbot with tool-use cards, provider switching (Ollama/Anthropic), and session management
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="Dashboard — hub-and-spoke network graph with real-time simulation" width="800">
+  <img src="docs/screenshots/dashboard.png" alt="Glass morphism dashboard with hub-and-spoke network graph, simulation controls, real-time event feed, and COBOL source viewer" width="800">
 </p>
 <p align="center">
-  <img src="docs/screenshots/cobol-viewer.png" alt="COBOL Viewer — syntax-highlighted source with auto-navigation" width="800">
-</p>
-<p align="center">
-  <img src="docs/screenshots/chat.png" alt="Chat — LLM tool-use with collapsible result cards" width="800">
+  <img src="docs/screenshots/chat.png" alt="LLM chatbot with tool-use cards showing account queries and banking operations" width="800">
 </p>
 
 ## What You'll Learn
@@ -194,7 +191,7 @@ python/                  Python observation layer — commented for integration 
     providers.py         Ollama (local) + Anthropic (cloud) providers
     conversation.py      Session management + tool-use loop
     audit.py             SQLite audit log for all tool invocations
-  tests/                 321 tests — all green
+  tests/                 372 tests (321 unit + 51 E2E) — all green
 
 console/                 Web dashboard + chatbot UI (static HTML/CSS/JS)
   index.html             SPA shell — nav tabs, role selector, health dot
@@ -258,7 +255,14 @@ These are defined in `COBOL-BANKING/copybooks/COMCODE.cpy` and shared across all
 ## Running Tests
 
 ```bash
-python -m pytest python/tests/ -v    # 321 tests, all green
+# Unit tests (321 tests)
+python -m pytest python/tests/ -v --ignore=python/tests/test_e2e_playwright.py
+
+# E2E tests (51 tests, requires running server + Playwright)
+python -m pytest python/tests/test_e2e_playwright.py -v
+
+# All 372 tests
+python -m pytest python/tests/ -v
 ```
 
 ## License

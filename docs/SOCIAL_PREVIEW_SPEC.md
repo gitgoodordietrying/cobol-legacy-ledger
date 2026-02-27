@@ -74,7 +74,7 @@ COBOL Legacy Ledger
 
 **Key stats** (small badges or pill-shaped labels, spaced vertically):
 - `10 COBOL Programs` — with a subtle green dot
-- `321 Tests Passing` — with a subtle green dot
+- `372 Tests Passing` — with a subtle green dot
 - `SHA-256 Hash Chains` — with a lock icon or chain icon
 - `6-Node Settlement` — with a network icon
 - `Python + FastAPI` — with a blue dot

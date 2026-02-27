@@ -21,7 +21,7 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 3. **Per-Node Database** — Each node has its own SQLite DB. No shared ledger.
 4. **6-Node Architecture** — Fixed: BANK_A, BANK_B, BANK_C, BANK_D, BANK_E, CLEARING.
 5. **Production COBOL** — Headers + KNOWN_ISSUES.md documentation required.
-6. **Testability** — Every requirement must be testable. 321 tests, all green.
+6. **Testability** — Every requirement must be testable. 372 tests (321 unit + 51 E2E), all green.
 7. **No Node.js** — Static HTML/CSS/JS only. No npm, no build process. Web console served via FastAPI StaticFiles at `/console/`.
 8. **Clear Error Paths** — Status codes: 00=success, 01=NSF, 02=limit, 03=invalid, 04=frozen, 99=error.
 9. **Educational Comments** — Every source file teaches concepts inline with `COBOL CONCEPT:` blocks. Layer 3 (API/LLM) files follow the same standard: 20-40 line module docstrings, `# ── Title ─────────` section banners, class/method docstrings, and inline comments on non-obvious lines.
@@ -82,7 +82,7 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 - `python/api/README.md` — REST API endpoint reference, auth model, curl examples
 - `python/llm/README.md` — LLM tool catalog, provider comparison, audit schema
 - `python/cobol_codegen/README.md` — Pipeline diagram, template catalog, usage examples
-- `python/tests/` — 321 tests across 17 test files
+- `python/tests/` — 372 tests (321 unit + 51 E2E) across 18 test files
 
 ### Web Console (static HTML/CSS/JS, no Node.js)
 
@@ -156,7 +156,7 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 ## Verification
 
 ```bash
-# Run all 321 tests
+# Run all 372 tests (321 unit + 51 E2E)
 python -m pytest python/tests/ -v
 
 # Full end-to-end proof
@@ -174,7 +174,7 @@ python -m pytest python/tests/ -v
 A: Read `COBOL-BANKING/src/SMOKETEST.cob` — the simplest program, teaches all 4 COBOL divisions. Then follow the [Learning Path](docs/LEARNING_PATH.md).
 
 **Q: What if cobc isn't installed?**
-A: The system works without COBOL installed. build.sh skips compilation, seed.sh uses Python file I/O (Mode B). All 321 tests pass in Mode B.
+A: The system works without COBOL installed. build.sh skips compilation, seed.sh uses Python file I/O (Mode B). All 321 unit tests pass in Mode B (E2E tests require a running server).
 
 **Q: Why per-node databases?**
 A: Financial systems are distributed. Each node operates independently. Per-node isolation mirrors real banking — distributed, independent, reconciled through settlement.
