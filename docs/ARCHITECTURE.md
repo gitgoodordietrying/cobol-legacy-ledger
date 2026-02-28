@@ -201,7 +201,7 @@ User Message → ConversationManager → LLM Provider → Tool Calls?
 
 Providers are swappable at runtime via `POST /api/provider/switch`.
 
-### Tool Definitions (12 tools)
+### Tool Definitions (17 tools, 6 categories)
 
 | Category | Tools | Required Permission |
 |----------|-------|-------------------|
@@ -211,6 +211,9 @@ Providers are swappable at runtime via `POST /api/provider/switch`.
 | Banking | view_chain | chain.view |
 | Banking | run_reconciliation | transactions.read |
 | Codegen | parse_cobol, generate_cobol, edit_cobol, validate_cobol | cobol.read |
+| Analysis | analyze_call_graph, trace_execution | cobol.read |
+| Analysis | analyze_data_flow, detect_dead_code | cobol.read |
+| Analysis | explain_cobol_pattern | cobol.read |
 
 ## Layer 4: Web Console
 
@@ -265,6 +268,18 @@ Browser → /console/index.html → Static HTML/CSS/JS (no Node.js)
 
 All programs share copybooks: `ACCTREC.cpy` (account record), `TRANSREC.cpy` (transaction record), `COMCODE.cpy` (status codes and constants).
 
+### Payroll Sidecar Programs (Layer 5 — Intentional Spaghetti)
+
+| Program | Lines | Era | Anti-Patterns |
+|---------|-------|-----|---------------|
+| `PAYROLL.cob` | ~400 | 1974 | GO TO network, ALTER, magic numbers, dead P-085 |
+| `TAXCALC.cob` | ~300 | 1983 | 6-level nested IF, PERFORM THRU, misleading comments |
+| `DEDUCTN.cob` | ~280 | 1991 | Structured/spaghetti hybrid, mixed COMP types, dead code |
+| `PAYBATCH.cob` | ~400 | 2002 | Y2K dead code, excessive DISPLAY tracing, half-finished refactor |
+| **Total** | **~1,380** | | See `COBOL-BANKING/payroll/KNOWN_ISSUES.md` |
+
+These programs are **intentionally** written with anti-patterns for educational contrast with the clean banking COBOL above. All issues are documented in the anti-pattern catalog.
+
 ## Python Observation Layer
 
 | Module | Lines | Purpose |
@@ -275,8 +290,54 @@ All programs share copybooks: `ACCTREC.cpy` (account record), `TRANSREC.cpy` (tr
 | `cross_verify.py` | 469 | Cross-node integrity verification + tamper detection |
 | `settlement.py` | 398 | 3-step inter-bank settlement coordinator |
 | `integrity.py` | 305 | SHA-256 hash chain + HMAC verification |
-| `auth.py` | 192 | RBAC — 4 roles, 16 permissions |
-| **Total** | **5,173** | |
+| `auth.py` | 192 | RBAC — 4 roles, 18 permissions (incl. payroll) |
+| `payroll_bridge.py` | ~350 | Payroll COBOL bridge (Mode A/B) + settlement integration |
+| `cobol_analyzer/` | ~600 | Static analysis: call graph, data flow, dead code, complexity, knowledge base |
+| **Total** | **~6,100** | |
+
+## Layer 5: Legacy Payroll Sidecar
+
+The payroll sidecar exists to teach the **contrast** between clean COBOL (Layers 1-4) and real-world legacy spaghetti. While banking COBOL follows modern structured practices, the payroll programs reproduce patterns from 1974-2002 mainframe development.
+
+```
+COBOL-BANKING/payroll/data/PAYROLL/
+  EMPLOYEES.DAT    ← 25 employees (95-byte fixed-width, LINE SEQUENTIAL)
+
+                    ┌─────────────────────────────┐
+                    │      PayrollBridge           │
+                    │   (payroll_bridge.py)        │
+                    ├──────────┬──────────────────┤
+                    │ Mode A   │    Mode B         │
+                    │ COBOL    │    Python          │
+                    │ subprocess│   file I/O        │
+                    └─────┬────┴────────┬─────────┘
+                          │             │
+                          ▼             ▼
+                    EMPLOYEES.DAT + payroll.db
+                          │
+                          ▼
+              Settlement transfers → existing 6-node settlement
+```
+
+**Anti-pattern catalog**: GO TO networks, ALTER (runtime branch modification), PERFORM THRU, 6-level nested IF without END-IF, mixed COMP types, misleading comments, dead code, Y2K artifacts, magic numbers. All documented in `COBOL-BANKING/payroll/KNOWN_ISSUES.md`.
+
+**Integration**: Payroll salary deposits generate settlement transfers that flow through the existing 6-node clearing house. Per-node isolation is preserved — payroll data stays in `payroll/data/PAYROLL/` with its own SQLite database.
+
+## Layer 5: COBOL Analysis Pipeline
+
+The analysis pipeline provides **structured context** that makes an LLM better at understanding spaghetti COBOL. An LLM cannot reliably trace GO TO chains across 500 lines, but deterministic tools can — then the LLM interprets the structured results.
+
+| Module | Purpose |
+|--------|---------|
+| `call_graph.py` | Paragraph dependency graph: PERFORM, GO TO, ALTER, PERFORM THRU, fall-through edges |
+| `data_flow.py` | Field read/write tracking per paragraph, single-field tracing |
+| `dead_code.py` | Unreachable paragraph detection (REACHABLE, DEAD, ALTER_CONDITIONAL) |
+| `complexity.py` | Per-paragraph complexity scoring: GO TO (+5), ALTER (+15), nested IF (+3/level) |
+| `knowledge_base.py` | COBOL pattern encyclopedia (~20 entries: ALTER, COMP-3, PERFORM THRU, etc.) |
+
+**LLM integration**: 5 analysis tools (17 total), enhanced system prompt with call-graph-first strategy. The prompt instructs the LLM to always run `analyze_call_graph` before attempting to explain unfamiliar COBOL.
+
+**Web console**: Analysis tab with interactive call graph SVG, execution trace visualization, and side-by-side compare viewer (spaghetti vs clean).
 
 ## Verification Performance
 

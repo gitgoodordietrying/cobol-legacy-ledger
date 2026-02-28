@@ -80,6 +80,20 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(simulation_router)
 
+    # Payroll sidecar router (Layer 5 — legacy payroll integration).
+    try:
+        from python.api.routes_payroll import router as payroll_router
+        app.include_router(payroll_router)
+    except ImportError:
+        pass  # Payroll bridge not available
+
+    # COBOL analysis router (Layer 5 — static analysis tools).
+    try:
+        from python.api.routes_analysis import router as analysis_router
+        app.include_router(analysis_router)
+    except ImportError:
+        pass  # Analysis module not available
+
     # Chat router depends on python.llm (optional httpx/anthropic packages).
     # If the LLM layer isn't importable, the API still serves banking and
     # codegen endpoints — graceful degradation for minimal installs.
@@ -107,6 +121,10 @@ def create_app() -> FastAPI:
 
     if cobol_src_dir.exists():
         app.mount("/cobol-source", StaticFiles(directory=str(cobol_src_dir)), name="cobol-source")
+
+    payroll_src_dir = Path(__file__).resolve().parent.parent.parent / "COBOL-BANKING" / "payroll" / "src"
+    if payroll_src_dir.exists():
+        app.mount("/cobol-source/payroll", StaticFiles(directory=str(payroll_src_dir)), name="cobol-source-payroll")
 
     # ── Exception Handlers ────────────────────────────────────────
     # AuthContext.require_permission() raises PermissionError on RBAC denial.

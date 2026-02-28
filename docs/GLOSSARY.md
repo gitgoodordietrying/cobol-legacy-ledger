@@ -6,6 +6,9 @@ COBOL, banking, and project-specific terms used in this codebase.
 
 ## COBOL Terms
 
+### ALTER
+Verb that modifies GO TO targets at runtime. `ALTER P-030 TO PROCEED TO P-040` changes where the GO TO in P-030 will jump — during execution. Deprecated in COBOL-85, removed in COBOL-2002. The most dangerous control flow construct in COBOL because static analysis cannot determine where a GO TO goes without simulating all ALTER chains. See `PAYROLL.cob`.
+
 ### 88-Level Condition Name
 A special data item that defines a named boolean condition on its parent field. Instead of writing `IF ACCT-STATUS = 'A'`, you write `IF ACCT-ACTIVE`. Defined with `88 ACCT-ACTIVE VALUE 'A'.` under the parent field. See `ACCTREC.cpy`.
 
@@ -18,6 +21,12 @@ Arithmetic verbs. COBOL uses English words instead of operators: `ADD X TO Y` in
 ### ASSIGN TO
 Part of the `SELECT ... ASSIGN TO` clause in FILE-CONTROL. Maps a logical file name to a physical filename on disk. `ASSIGN TO "ACCOUNTS.DAT"` means this program reads/writes `ACCOUNTS.DAT` in the current working directory. See `ACCOUNTS.cob`.
 
+### COMP (COMPUTATIONAL)
+Binary storage format for numeric fields. `USAGE IS COMP` stores numbers in native binary format instead of display (character) format. Faster for arithmetic but not human-readable in data files. Variants include COMP-1 (single-precision float), COMP-2 (double-precision float), and COMP-3 (packed decimal). See `DEDUCTN.cob`.
+
+### COMP-3 (PACKED DECIMAL)
+IBM packed decimal storage format. Stores 2 digits per byte plus a sign nibble — `PIC S9(7) COMP-3` uses 4 bytes instead of 7. Invented for IBM mainframes where decimal arithmetic was faster in packed format. Still used in financial systems because it avoids floating-point rounding errors. See `TAXREC.cpy`.
+
 ### CLOSE
 Verb that releases a file after reading or writing. Every `OPEN` must have a matching `CLOSE`. Leaving files open can corrupt data. See `SMOKETEST.cob`.
 
@@ -29,6 +38,9 @@ Preprocessor directive that includes a copybook file inline, similar to C's `#in
 
 ### Copybook
 A shared source file (`.cpy` extension) containing record layouts, constants, or common working-storage definitions. Included via the `COPY` statement. Equivalent to header files in C. See `COBOL-BANKING/copybooks/`.
+
+### Dead Code (COBOL)
+Paragraphs that are unreachable — never PERFORMed, never targeted by GO TO, and not reachable via fall-through. In legacy COBOL, dead paragraphs are almost never deleted because removal requires formal change requests and regression testing. They accumulate over decades, misleading readers. See `PAYROLL.cob` (P-085) and `PAYBATCH.cob` (Y2K-REVERSE-CONVERT).
 
 ### DATA DIVISION
 The third of four COBOL divisions. Declares all variables, file record layouts, and working storage. COBOL has no inline variable declarations — everything is declared here before the PROCEDURE DIVISION. See `SMOKETEST.cob`.
@@ -49,6 +61,9 @@ The second division. Maps logical names to physical resources. The INPUT-OUTPUT 
 ### EVALUATE
 COBOL's switch/case equivalent. `EVALUATE X WHEN 'A' ... WHEN 'B' ... WHEN OTHER ...` is like `switch(x) { case 'A': ... case 'B': ... default: ... }`. See `TRANSACT.cob`.
 
+### Fall-Through
+Sequential execution from one paragraph into the next when no STOP RUN, GO TO, or EXIT PARAGRAPH terminates the current paragraph. In COBOL, paragraphs are just labels — execution continues into the next paragraph unless explicitly redirected. This is a frequent source of bugs in spaghetti code. See `GOTO_COBOL` snippet in tests.
+
 ### EXIT PARAGRAPH
 Early return from the current paragraph. Equivalent to `return` in the middle of a function. Used for guard clauses and validation pipelines. See `VALIDATE.cob`.
 
@@ -67,6 +82,9 @@ Part of the DATA DIVISION that contains FD entries. Defines record buffers — w
 ### FILE STATUS
 A 2-character variable that receives the result code after every file operation. `'00'` = success, `'10'` = end-of-file, anything else = error. Declared with `FILE STATUS IS WS-FILE-STATUS` in SELECT. See `SMOKETEST.cob`.
 
+### GO TO
+Unconditional branch to another paragraph. `GO TO P-020` jumps execution to paragraph P-020 immediately, skipping any code between. Combined with ALTER (which changes GO TO targets at runtime), GO TO creates "spaghetti code" — tangled control flow that is nearly impossible to trace manually. Deprecated in favor of structured constructs (PERFORM, EVALUATE). See `PAYROLL.cob`.
+
 ### FUNCTION MOD
 Intrinsic function for modular arithmetic. `FUNCTION MOD(X, Y)` returns the remainder of X / Y. Used for pseudo-random number generation in `SIMULATE.cob`.
 
@@ -79,6 +97,9 @@ Intrinsic function that removes leading/trailing spaces. Essential because COBOL
 ### IDENTIFICATION DIVISION
 The first division. Contains `PROGRAM-ID` (the program's name) and optional metadata (AUTHOR, DATE-WRITTEN). See every `.cob` file.
 
+### Magic Number
+An unnamed numeric literal in the PROCEDURE DIVISION. `MOVE 40 TO WK-M1` uses 40 without explaining that it's "standard work hours." When business rules change, you must search for every occurrence of the literal value across all programs. See `PAYROLL.cob` (PY-04 in KNOWN_ISSUES.md).
+
 ### Implied Decimal (V)
 In PIC clauses, `V` marks the decimal point position without storing an actual `.` character. `PIC 9(10)V99` stores 12 digits where the last 2 are cents. The value `$5,000.00` is stored as `000000500000`. See `ACCTREC.cpy`.
 
@@ -87,6 +108,9 @@ Verb that resets a group item (record) to its default values — spaces for alph
 
 ### LINE SEQUENTIAL
 File organization where records are separated by line breaks (newlines). This is the simplest file format — each line is one record. Alternative is RECORD SEQUENTIAL (fixed-length blocks with no line breaks). This project uses LINE SEQUENTIAL throughout. See `SMOKETEST.cob`.
+
+### Nested IF (without END-IF)
+Pre-1985 COBOL style where IF statements are nested without explicit END-IF terminators. A single period (`.`) terminates all open IF scopes simultaneously. Adding a statement inside the nesting changes which IF each ELSE matches. See `TAXCALC.cob` (TX-01: 6-level nested IF).
 
 ### MOVE
 Assignment verb. `MOVE X TO Y` copies the value of X into Y (like `y = x`). COBOL has no `=` assignment operator — all assignments use MOVE. See `SMOKETEST.cob`.
@@ -99,6 +123,9 @@ Verb that prepares a file for reading or writing. Modes: `OPEN INPUT` (read-only
 
 ### Paragraph
 A named block of executable code in the PROCEDURE DIVISION. Called with `PERFORM paragraph-name`. Equivalent to a function/method, but COBOL paragraphs share the same scope — all variables are global. See `SMOKETEST.cob`.
+
+### PERFORM THRU
+Execute a range of paragraphs sequentially. `PERFORM STEP-A THRU STEP-C` executes STEP-A, STEP-B, and STEP-C in order. The danger: inserting a new paragraph between STEP-A and STEP-C silently adds it to the execution without any explicit call. See `TAXCALC.cob` (TX-02).
 
 ### PERFORM
 Verb that calls a paragraph (subroutine). `PERFORM X` calls paragraph X and returns. `PERFORM X VARYING I FROM 1 BY 1 UNTIL I > N` is a for-loop. `PERFORM UNTIL condition` is a while-loop. See `ACCOUNTS.cob`.
@@ -129,6 +156,9 @@ A grouping of related paragraphs in the PROCEDURE DIVISION, or a grouping of rel
 
 ### SELECT
 Part of FILE-CONTROL that declares a logical file name and its properties. `SELECT ACCOUNTS-FILE ASSIGN TO "ACCOUNTS.DAT" ORGANIZATION IS LINE SEQUENTIAL FILE STATUS IS WS-FILE-STATUS` maps the logical name `ACCOUNTS-FILE` to the physical file `ACCOUNTS.DAT`. See `ACCOUNTS.cob`.
+
+### Spaghetti Code
+COBOL with tangled GO TO and ALTER control flow that makes execution order impossible to determine by reading the source top-to-bottom. The payroll sidecar (`COBOL-BANKING/payroll/`) is an intentional example — see PAYROLL.cob where P-000 through P-090 form an interconnected GO TO network with ALTER-modified jump targets.
 
 ### STOP RUN
 Terminates the program immediately. Returns control to the operating system (or the calling process — in this project, the Python bridge). See `SMOKETEST.cob`.
@@ -165,10 +195,13 @@ The daily reconciliation process where a bank tallies all transactions, verifies
 The authoritative record of all financial transactions. In COBOL banking, the ledger is the combination of `ACCOUNTS.DAT` (balances) and `TRANSACT.DAT` (transaction history).
 
 ### Nostro Account
-An account that a bank holds at another institution — literally "our money at their bank" (from Italian "nostro" = ours). In this system, each bank has a nostro account at the clearing house (e.g., `NST-BANK-A`). Settlement moves money between nostro accounts. See `SETTLE.cob`.
+An account that a bank holds at another institution — literally "our money at their bank" (from Italian "nostro" = ours). In this system, each bank has a nostro account at the clearing house (e.g., `NST-BANK-A`). Settlement moves money between nostro accounts. Payroll salary deposits also route through nostro accounts via the clearing house. See `SETTLE.cob`.
 
 ### NSF (Non-Sufficient Funds)
 A transaction rejection when the account balance is too low to cover the withdrawal or transfer amount. Status code `01` in this system.
+
+### Payroll Settlement
+Bulk salary deposits routed through the clearing house as inter-bank transfers. Each employee's payroll generates a transfer from the CLEARING node to the employee's bank account, using the same 3-leg settlement process as regular inter-bank transfers. See `python/payroll_bridge.py`.
 
 ### Reconciliation
 The process of comparing two sets of records to ensure they agree. In this system: (1) RECONCILE.cob compares transaction history against account balances, (2) the Python cross-verifier compares DAT file balances against SQLite snapshots. Discrepancies indicate errors or tampering.
@@ -183,14 +216,26 @@ A unique identifier for a settlement transaction (`STL-YYYYMMDD-NNNNNN`). Used b
 
 ## Project-Specific Terms
 
+### Call Graph
+A paragraph dependency map built by the `CallGraphAnalyzer`. Shows PERFORM, GO TO, ALTER, PERFORM THRU, and fall-through edges between paragraphs. Essential for understanding spaghetti COBOL where execution flow is non-sequential. See `python/cobol_analyzer/call_graph.py`.
+
 ### Bridge Pattern
 The Python wrapper (`bridge.py`) that sits between the CLI/API layer and the COBOL programs. It handles subprocess invocation, output parsing, SQLite synchronization, and integrity chain recording. The bridge never modifies COBOL — it only observes.
+
+### Complexity Score
+A weighted sum of anti-patterns per paragraph, computed by the `ComplexityAnalyzer`. Weights: GO TO (+5), ALTER (+15), PERFORM THRU (+8), nested IF (+3/level), magic number (+2). Ratings: clean (0-19), moderate (20-49), spaghetti (50+). See `python/cobol_analyzer/complexity.py`.
 
 ### Chain Entry
 A single record in the SHA-256 hash chain, stored in SQLite. Contains: transaction data, timestamp, previous hash, and computed hash. The chain is append-only — entries cannot be modified or deleted without breaking the chain.
 
+### Execution Trace
+An ordered sequence of paragraphs that will execute when starting from a given entry point, following GO TO chains, ALTER modifications, and fall-throughs. Produced by `CallGraphAnalyzer.trace_execution()`. Essential for spaghetti code where the visual order of paragraphs does not match execution order. See `python/cobol_analyzer/call_graph.py`.
+
 ### DAT File
 COBOL fixed-width data files (`ACCOUNTS.DAT`, `TRANSACT.DAT`). Each record is a fixed number of bytes (70 for accounts, 103 for transactions). Fields are positional — character 1-10 is the account ID, 11-40 is the name, etc. No delimiters, no headers.
+
+### Knowledge Base
+A COBOL pattern and idiom encyclopedia (~20 entries) providing structured context for LLM explanations. Each entry describes a COBOL construct's name, purpose, era, category, risks, and modern equivalents. Used by the `explain_cobol_pattern` tool. See `python/cobol_analyzer/knowledge_base.py`.
 
 ### Hash Chain
 An append-only sequence of records where each record's hash depends on the previous record's hash. If any record is modified, all subsequent hashes become invalid. This system uses SHA-256. See `python/integrity.py`.
@@ -200,6 +245,9 @@ The production execution path. Python calls compiled COBOL binaries as subproces
 
 ### Mode B (Python Fallback)
 The fallback execution path when GnuCOBOL isn't installed. Python reads/writes the same fixed-width DAT files directly, applying identical business rules. Used in CI pipelines, dev machines, and environments without a COBOL compiler.
+
+### Payroll Sidecar
+An intentionally spaghetti COBOL subsystem (4 programs, ~1,380 lines) added for teaching contrast. While the banking COBOL follows clean, modern practices, the payroll programs reproduce real-world anti-patterns from 1974-2002 mainframe development. All anti-patterns are documented in `COBOL-BANKING/payroll/KNOWN_ISSUES.md`. See Lesson 9 in `docs/TEACHING_GUIDE.md`.
 
 ### Node
 One of the 6 independent banking entities in the system: BANK_A, BANK_B, BANK_C, BANK_D, BANK_E, or CLEARING. Each node has its own data directory, SQLite database, and hash chain. Nodes communicate only through file exchange (OUTBOUND.DAT) and the settlement coordinator.

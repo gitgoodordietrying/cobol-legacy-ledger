@@ -252,6 +252,78 @@ class TestCodegenDispatch:
         assert "error" in result
 
 
+# ── Analysis Dispatch ────────────────────────────────────────────
+# Layer 3: correct results from analysis pipeline methods.
+
+class TestAnalysisDispatch:
+    """Analysis tool dispatch works correctly."""
+
+    SAMPLE_COBOL = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ANALYSIS-TEST.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 WS-AMT PIC 9(7)V99 VALUE 0.
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           MOVE 100 TO WS-AMT
+           GO TO END-PARA.
+       SKIP-PARA.
+           DISPLAY "DEAD".
+       END-PARA.
+           STOP RUN.
+"""
+
+    def test_analyze_call_graph(self, executor, admin):
+        """analyze_call_graph returns paragraphs and edges."""
+        result = executor.execute("analyze_call_graph", {"source_text": self.SAMPLE_COBOL}, admin)
+        assert "paragraphs" in result
+        assert "edges" in result
+
+    def test_trace_execution(self, executor, admin):
+        """trace_execution returns execution_path and steps."""
+        result = executor.execute("trace_execution", {
+            "source_text": self.SAMPLE_COBOL, "entry_point": "MAIN-PARA",
+        }, admin)
+        assert "execution_path" in result
+        assert result["steps"] >= 1
+
+    def test_analyze_data_flow(self, executor, admin):
+        """analyze_data_flow returns paragraph reads/writes."""
+        result = executor.execute("analyze_data_flow", {"source_text": self.SAMPLE_COBOL}, admin)
+        assert "paragraph_reads" in result or "paragraph_writes" in result
+
+    def test_analyze_data_flow_field(self, executor, admin):
+        """analyze_data_flow with field_name returns field + accesses."""
+        result = executor.execute("analyze_data_flow", {
+            "source_text": self.SAMPLE_COBOL, "field_name": "WS-AMT",
+        }, admin)
+        assert result["field"] == "WS-AMT"
+        assert "accesses" in result
+
+    def test_detect_dead_code(self, executor, admin):
+        """detect_dead_code returns dead and reachable sets."""
+        result = executor.execute("detect_dead_code", {"source_text": self.SAMPLE_COBOL}, admin)
+        assert "dead" in result
+        assert "reachable" in result
+
+    def test_explain_pattern_found(self, executor, admin):
+        """explain_cobol_pattern returns name and era for known pattern."""
+        result = executor.execute("explain_cobol_pattern", {"pattern_name": "ALTER"}, admin)
+        assert "name" in result
+        assert "era" in result
+
+    def test_explain_pattern_not_found(self, executor, admin):
+        """explain_cobol_pattern returns error and suggestions for unknown."""
+        result = executor.execute("explain_cobol_pattern", {"pattern_name": "NONEXISTENT-XYZ"}, admin)
+        assert "error" in result
+        assert "suggestions" in result
+
+    def test_analysis_rbac_denied(self, executor, viewer):
+        """Viewer lacks cobol.read — analysis denied."""
+        result = executor.execute("analyze_call_graph", {"source_text": self.SAMPLE_COBOL}, viewer)
+        assert result.get("permitted") is False
+
+
 # ── Audit Logging ─────────────────────────────────────────────────
 # Layer 4: every invocation is recorded in the audit log.
 

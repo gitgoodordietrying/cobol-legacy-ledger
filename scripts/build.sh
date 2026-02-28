@@ -60,6 +60,40 @@ for PROG in "${PROGRAMS[@]}"; do
   fi
 done
 
+# ── Payroll sidecar programs ──────────────────────────────────
+# Legacy payroll system with intentional anti-patterns (Layer 5).
+# Uses its own copybook directory in addition to the banking copybooks.
+echo ""
+echo "=== PAYROLL SIDECAR ==="
+PAYROLL_PROGRAMS=(PAYROLL TAXCALC DEDUCTN PAYBATCH)
+
+for PROG in "${PAYROLL_PROGRAMS[@]}"; do
+  PROG_PATH="$PROJECT_ROOT/COBOL-BANKING/payroll/src/${PROG}.cob"
+  BIN_PATH="$PROJECT_ROOT/COBOL-BANKING/bin/${PROG}"
+
+  if [ ! -f "$PROG_PATH" ]; then
+    echo "SKIP $PROG (file not found: $PROG_PATH)"
+    continue
+  fi
+
+  echo -n "BUILD $PROG ... "
+  if [ "$COBC" = "cobc" ]; then
+    if $COBC -x -free -I "$PROJECT_ROOT/COBOL-BANKING/payroll/copybooks" "$PROG_PATH" -o "$BIN_PATH" 2>&1; then
+      echo "OK"
+    else
+      echo "FAIL"
+      FAILED_PROGRAMS+=("$PROG")
+    fi
+  else
+    if $COBC -x -free -I COBOL-BANKING/payroll/copybooks "COBOL-BANKING/payroll/src/${PROG}.cob" -o "COBOL-BANKING/bin/${PROG}" 2>&1; then
+      echo "OK"
+    else
+      echo "FAIL"
+      FAILED_PROGRAMS+=("$PROG")
+    fi
+  fi
+done
+
 # Fix permissions (Docker creates files as root)
 chmod +x "$PROJECT_ROOT/COBOL-BANKING/bin"/* 2>/dev/null || true
 

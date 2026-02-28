@@ -230,6 +230,71 @@ TOOLS: List[Dict[str, Any]] = [
             "required": ["source_text"],
         },
     },
+    # ── COBOL Analysis Tools (Layer 5) ────────────────────────────
+    {
+        "name": "analyze_call_graph",
+        "description": "Build a paragraph dependency graph for COBOL source. Returns paragraphs, edges (PERFORM, GO TO, ALTER, PERFORM THRU, fall-through), and ALTER targets. Essential first step for understanding spaghetti COBOL.",
+        "required_permission": "cobol.read",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_text": {"type": "string", "description": "COBOL source code to analyze"},
+            },
+            "required": ["source_text"],
+        },
+    },
+    {
+        "name": "trace_execution",
+        "description": "Trace the execution path from an entry paragraph through GO TO chains, ALTER modifications, and fall-throughs. Returns ordered list of paragraphs that will execute. THE killer feature for spaghetti COBOL — no vanilla LLM can trace GO TO chains reliably.",
+        "required_permission": "cobol.read",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_text": {"type": "string", "description": "COBOL source code"},
+                "entry_point": {"type": "string", "description": "Paragraph name to start tracing from"},
+                "max_steps": {"type": "integer", "default": 100, "description": "Maximum steps to trace"},
+            },
+            "required": ["source_text", "entry_point"],
+        },
+    },
+    {
+        "name": "analyze_data_flow",
+        "description": "Track which fields are read/written in each paragraph. Optionally trace a single field across the entire program. Helps understand data dependencies in code with no formal parameter passing.",
+        "required_permission": "cobol.read",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_text": {"type": "string", "description": "COBOL source code"},
+                "field_name": {"type": "string", "description": "Optional: trace a specific field. If omitted, analyzes all fields."},
+            },
+            "required": ["source_text"],
+        },
+    },
+    {
+        "name": "detect_dead_code",
+        "description": "Classify paragraphs as REACHABLE, DEAD (never executed), or ALTER_CONDITIONAL (only reachable via ALTER-modified GO TO). Dead paragraphs are extremely common in legacy COBOL.",
+        "required_permission": "cobol.read",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_text": {"type": "string", "description": "COBOL source code"},
+                "entry_point": {"type": "string", "description": "Entry paragraph (defaults to first)"},
+            },
+            "required": ["source_text"],
+        },
+    },
+    {
+        "name": "explain_cobol_pattern",
+        "description": "Look up a COBOL pattern, idiom, or anti-pattern in the knowledge base. Returns era, purpose, mainframe context, modern equivalent, example, and risk. Use when encountering unfamiliar COBOL constructs.",
+        "required_permission": "cobol.read",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern_name": {"type": "string", "description": "Pattern name (e.g., 'ALTER', 'COMP-3', 'PERFORM THRU', 'Y2K artifacts')"},
+            },
+            "required": ["pattern_name"],
+        },
+    },
 ]
 
 

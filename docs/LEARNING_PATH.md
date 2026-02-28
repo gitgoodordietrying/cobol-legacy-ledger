@@ -254,6 +254,65 @@ Watch all the pieces work together.
 
 ---
 
+## Level 6: Legacy Code and Analysis
+
+*Goal: Read spaghetti COBOL, use analysis tools, and understand anti-patterns.*
+
+**Prerequisites**: Level 4 (settlement concepts), Level 5 (Python bridge)
+
+### Reading 6.1: The Fictional History
+**File**: `COBOL-BANKING/payroll/README.md`
+
+Understand the backstory — four developers (JRK, PMR, SLW, Y2K team) over 28 years.
+
+**What you'll learn**:
+- How real legacy codebases accumulate technical debt
+- Why multiple coding styles coexist in one program
+- The culture of "don't delete, disable"
+
+### Reading 6.2: Manual Code Archaeology
+**File**: `COBOL-BANKING/payroll/src/PAYROLL.cob`
+
+Try to trace execution from P-000 manually. Time yourself.
+
+**What you'll learn**:
+- GO TO networks defeat sequential reading
+- ALTER makes static tracing impossible
+- Why tools are necessary for spaghetti code
+
+**Exercise**: Draw the execution path from P-000. How many paragraphs did you visit? How long did it take?
+
+### Reading 6.3: Tool-Assisted Analysis
+**Files**: `python/cobol_analyzer/`, web console Analysis tab
+
+Use the analysis tools on PAYROLL.cob and compare to your manual trace.
+
+**What you'll learn**:
+- `analyze_call_graph` — map paragraph dependencies automatically
+- `trace_execution` — follow GO TO chains deterministically
+- `detect_dead_code` — find paragraphs that never execute
+- `complexity` — quantify anti-pattern density
+
+**Exercises**:
+1. Run `analyze_call_graph` on PAYROLL.cob — compare edges to your manual diagram
+2. Run `trace_execution` from P-000 — does the tool find paths you missed?
+3. Run `detect_dead_code` — identify which paragraphs are unreachable
+4. Open `COBOL-BANKING/payroll/KNOWN_ISSUES.md` — match each issue to the code you found
+5. Run the compare view (PAYROLL.cob vs TRANSACT.cob) — quantify the difference
+6. **Challenge**: Use the analysis tools to explain what DEDUCTN.cob's `D-090-OVERFLOW` paragraph does and how it's reached
+
+### Reading 6.4: The Anti-Pattern Catalog
+**File**: `COBOL-BANKING/payroll/KNOWN_ISSUES.md`
+
+The "answer key" — every anti-pattern documented with era, rationale, and modern equivalent.
+
+**What you'll learn**:
+- Each anti-pattern has a historical reason
+- "Bad code" is usually "code written under constraints that no longer exist"
+- Documentation is the difference between intentional spaghetti and accidental spaghetti
+
+---
+
 ## Quick Reference Card
 
 | COBOL | Python/Java Equivalent |
@@ -279,3 +338,7 @@ Watch all the pieces work together.
 | `EXIT PERFORM` | `break` |
 | `EXIT PARAGRAPH` | `return` (early) |
 | `STOP RUN` | `sys.exit()` |
+| `GO TO paragraph-name` | `goto label` (unconditional jump) |
+| `ALTER X TO PROCEED TO Y` | *(no modern equivalent — runtime flow modification)* |
+| `PERFORM A THRU B` | "execute paragraphs A through B sequentially" |
+| `COMP-3` | packed decimal (2 digits/byte, IBM mainframe optimization) |

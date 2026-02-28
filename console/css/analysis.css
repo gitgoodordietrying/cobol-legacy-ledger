@@ -1,0 +1,296 @@
+/* ── Analysis Views ────────────────────────────────────────────────
+   Styles for the call graph, compare viewer, and complexity heatmap.
+   ────────────────────────────────────────────────────────────────── */
+
+/* ── Analysis Grid Layout ─────────────────────────────────────── */
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-4);
+  height: 100%;
+}
+
+.analysis-grid--full {
+  grid-template-columns: 1fr;
+}
+
+/* ── Call Graph SVG ───────────────────────────────────────────── */
+.call-graph {
+  position: relative;
+  min-height: 400px;
+}
+
+.call-graph__svg-wrap {
+  width: 100%;
+  height: calc(100% - 48px);
+  overflow: auto;
+}
+
+.call-graph__svg-wrap svg {
+  width: 100%;
+  min-height: 350px;
+}
+
+.call-graph__controls {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Graph node styling */
+.cg-node {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.cg-node:hover {
+  opacity: 0.85;
+}
+
+.cg-node__rect {
+  rx: 6;
+  ry: 6;
+  stroke-width: 1.5;
+}
+
+.cg-node__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  fill: var(--text-primary);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.cg-node__score {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  fill: var(--text-muted);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* Edge styling by type */
+.cg-edge {
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.cg-edge--PERFORM {
+  stroke: var(--success);
+  stroke-dasharray: none;
+}
+
+.cg-edge--GOTO {
+  stroke: var(--danger);
+  stroke-dasharray: 6 3;
+}
+
+.cg-edge--ALTER {
+  stroke: #f59e0b;
+  stroke-dasharray: 3 3;
+  stroke-width: 2;
+}
+
+.cg-edge--PERFORM_THRU {
+  stroke: var(--info);
+  stroke-dasharray: 8 4;
+}
+
+.cg-edge--FALL_THROUGH {
+  stroke: var(--text-muted);
+  stroke-dasharray: 2 4;
+  stroke-width: 1;
+}
+
+/* Edge arrowheads */
+.cg-arrow--PERFORM { fill: var(--success); }
+.cg-arrow--GOTO { fill: var(--danger); }
+.cg-arrow--ALTER { fill: #f59e0b; }
+.cg-arrow--PERFORM_THRU { fill: var(--info); }
+.cg-arrow--FALL_THROUGH { fill: var(--text-muted); }
+
+/* Graph legend */
+.cg-legend {
+  display: flex;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.cg-legend__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cg-legend__line {
+  width: 20px;
+  height: 2px;
+  display: inline-block;
+}
+
+/* ── Compare Viewer ──────────────────────────────────────────── */
+.compare-viewer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  height: 100%;
+  background: var(--glass-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.compare-pane {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  min-height: 0;
+}
+
+.compare-pane__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--glass-border);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.compare-pane__stats {
+  display: flex;
+  gap: var(--sp-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.compare-pane__source {
+  flex: 1;
+  overflow: auto;
+  padding: var(--sp-2) 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* ── Complexity Heatmap ──────────────────────────────────────── */
+.complexity-line {
+  display: block;
+  padding: 0 var(--sp-3);
+  min-height: 1.5em;
+  white-space: pre;
+  transition: background-color 0.3s;
+}
+
+.complexity-line--clean {
+  background: transparent;
+}
+
+.complexity-line--low {
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.complexity-line--medium {
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.complexity-line--high {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.complexity-line--dead {
+  background: rgba(100, 116, 139, 0.12);
+  opacity: 0.6;
+}
+
+/* Paragraph score badge (inline) */
+.complexity-score {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: var(--sp-2);
+  vertical-align: middle;
+}
+
+.complexity-score--clean {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--success);
+}
+
+.complexity-score--moderate {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+}
+
+.complexity-score--spaghetti {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--danger);
+}
+
+/* ── Analysis Summary Card ───────────────────────────────────── */
+.analysis-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+}
+
+.analysis-stat {
+  text-align: center;
+}
+
+.analysis-stat__value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.analysis-stat__value--clean { color: var(--success); }
+.analysis-stat__value--moderate { color: var(--warning); }
+.analysis-stat__value--spaghetti { color: var(--danger); }
+
+.analysis-stat__label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── Execution Path ──────────────────────────────────────────── */
+.exec-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  align-items: center;
+}
+
+.exec-path__step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  border: 1px solid var(--glass-border);
+}
+
+.exec-path__arrow {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.exec-path__arrow--GOTO { color: var(--danger); }
+.exec-path__arrow--ALTER { color: #f59e0b; }
+.exec-path__arrow--FALL_THROUGH { color: var(--text-muted); }
+.exec-path__arrow--PERFORM { color: var(--success); }

@@ -236,3 +236,16 @@ class TestSystemPrompt:
         """System prompt includes COBOL status code reference."""
         assert "00=success" in SYSTEM_PROMPT
         assert "01=insufficient" in SYSTEM_PROMPT
+
+    def test_system_prompt_mentions_analysis_tools(self):
+        """System prompt lists analysis tool names."""
+        assert "analyze_call_graph" in SYSTEM_PROMPT
+        assert "trace_execution" in SYSTEM_PROMPT
+
+    def test_system_prompt_mentions_cobol_analysis_strategy(self):
+        """System prompt includes call-graph-first strategy guidance."""
+        assert "call graph" in SYSTEM_PROMPT.lower() or "analyze_call_graph" in SYSTEM_PROMPT
+
+    def test_system_prompt_mentions_goto_warning(self):
+        """System prompt warns about GO TO tracing."""
+        assert "GO TO" in SYSTEM_PROMPT

@@ -46,8 +46,8 @@ class TestToolDefinitions:
             assert tool["input_schema"]["type"] == "object"
 
     def test_tool_count(self):
-        """Exactly 12 tools defined (8 banking + 4 codegen)."""
-        assert len(TOOLS) == 12
+        """Exactly 17 tools defined (8 banking + 4 codegen + 5 analysis)."""
+        assert len(TOOLS) == 17
 
     def test_get_tool_definition_found(self):
         """get_tool_definition returns the tool dict for a known name."""
@@ -67,9 +67,9 @@ class TestRoleFiltering:
     """Verify get_tools_for_role returns correct tools per role."""
 
     def test_admin_sees_all_tools(self):
-        """Admin role has all permissions, sees all 12 tools."""
+        """Admin role has all permissions, sees all 17 tools."""
         tools = get_tools_for_role(Role.ADMIN)
-        assert len(tools) == 12
+        assert len(tools) == 17
 
     def test_viewer_sees_read_only_tools(self):
         """Viewer sees accounts.read, transactions.read, chain.view, batch.read tools only."""

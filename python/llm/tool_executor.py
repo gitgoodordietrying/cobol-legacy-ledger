@@ -47,6 +47,10 @@ from python.cobol_codegen import (
     COBOLParser, COBOLGenerator, COBOLEditor, COBOLValidator,
     crud_program, report_program, batch_program, copybook_record,
 )
+from python.cobol_analyzer import (
+    CallGraphAnalyzer, DataFlowAnalyzer, DeadCodeAnalyzer,
+    ComplexityAnalyzer, KnowledgeBase,
+)
 from python.llm.tools import get_tool_definition
 from python.llm.audit import AuditLog
 
@@ -80,6 +84,11 @@ class ToolExecutor:
         self._generator = COBOLGenerator()
         self._editor = COBOLEditor()
         self._validator = COBOLValidator()
+        self._cg_analyzer = CallGraphAnalyzer()
+        self._df_analyzer = DataFlowAnalyzer()
+        self._dc_analyzer = DeadCodeAnalyzer()
+        self._cx_analyzer = ComplexityAnalyzer()
+        self._kb = KnowledgeBase()
 
     def _get_bridge(self, node: str) -> COBOLBridge:
         """Get or create a COBOLBridge for the given node."""
@@ -310,5 +319,44 @@ class ToolExecutor:
                 "valid": all(i.severity != "ERROR" for i in issues),
                 "issues": [{"severity": i.severity, "message": i.message, "location": i.location} for i in issues],
             }
+
+        # ── COBOL Analysis Dispatch ──────────────────────────────────
+        elif tool_name == "analyze_call_graph":
+            graph = self._cg_analyzer.analyze(params["source_text"])
+            return graph.to_dict()
+
+        elif tool_name == "trace_execution":
+            path = self._cg_analyzer.trace_execution(
+                params["source_text"],
+                params["entry_point"],
+                max_steps=params.get("max_steps", 100),
+            )
+            return {"execution_path": path, "steps": len(path)}
+
+        elif tool_name == "analyze_data_flow":
+            field_name = params.get("field_name")
+            if field_name:
+                trace = self._df_analyzer.trace_field(params["source_text"], field_name)
+                return {"field": field_name, "accesses": trace, "count": len(trace)}
+            else:
+                result = self._df_analyzer.analyze(params["source_text"])
+                return result.to_dict()
+
+        elif tool_name == "detect_dead_code":
+            result = self._dc_analyzer.analyze(
+                params["source_text"],
+                entry_point=params.get("entry_point"),
+            )
+            return result.to_dict()
+
+        elif tool_name == "explain_cobol_pattern":
+            entry = self._kb.lookup(params["pattern_name"])
+            if entry is None:
+                suggestions = self._kb.search(params["pattern_name"])
+                return {
+                    "error": f"Pattern '{params['pattern_name']}' not found",
+                    "suggestions": suggestions,
+                }
+            return entry
 
         return {"error": f"Unimplemented tool: {tool_name}"}

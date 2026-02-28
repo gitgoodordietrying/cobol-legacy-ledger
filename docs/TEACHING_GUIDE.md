@@ -8,7 +8,7 @@ An instructor's manual for teaching COBOL to software engineers using this codeb
 
 **Audience**: Software engineers with experience in any modern language (Python, Java, C, JavaScript) who want to understand COBOL.
 
-**Duration**: 8 lessons, approximately 1-2 hours each.
+**Duration**: 10 lessons, approximately 1-2 hours each.
 
 **Prerequisites**: Ability to read code in any language. No COBOL experience needed.
 
@@ -245,20 +245,92 @@ An instructor's manual for teaching COBOL to software engineers using this codeb
 
 ---
 
+## Lesson 9: Legacy Code Archaeology — The Payroll Sidecar
+
+**Objective**: Recognize and understand real-world COBOL anti-patterns — GO TO networks, ALTER, PERFORM THRU, nested IF without END-IF, dead code, and Y2K artifacts.
+
+**Files to read**:
+- `COBOL-BANKING/payroll/src/PAYROLL.cob` — GO TO network, ALTER, magic numbers (1974)
+- `COBOL-BANKING/payroll/src/TAXCALC.cob` — 6-level nested IF, misleading comments (1983)
+- `COBOL-BANKING/payroll/src/DEDUCTN.cob` — Structured/spaghetti hybrid, mixed COMP types (1991)
+- `COBOL-BANKING/payroll/src/PAYBATCH.cob` — Y2K dead code, excessive tracing (2002)
+- `COBOL-BANKING/payroll/KNOWN_ISSUES.md` — Anti-pattern catalog (answer key)
+
+**Key concepts**:
+- GO TO networks — interconnected paragraph jumps that bypass sequential flow
+- ALTER — runtime modification of GO TO targets (the most dangerous COBOL construct)
+- PERFORM THRU — paragraph range execution (silently includes new paragraphs)
+- Nested IF without END-IF — period terminates ALL open IF scopes
+- Dead code — unreachable paragraphs left in source for decades
+- Misleading comments — comments that contradict the code (5% vs 7.25%)
+- Y2K artifacts — parallel date fields never cleaned up
+
+**Activities**:
+1. Read PAYROLL.cob — diagram the P-000 → P-090 flow (follow GO TO, not line order)
+2. Read TAXCALC.cob — find the misleading comment (says 5%, code does 7.25%)
+3. Read DEDUCTN.cob — identify where structured code transitions to spaghetti (and why)
+4. Read PAYBATCH.cob — find all dead Y2K code (Y2K-REVERSE-CONVERT)
+5. Cross-reference every finding against KNOWN_ISSUES.md — did you find them all?
+
+**Discussion points**:
+- Why does real-world COBOL look like this? (Multiple developers, decades of patches, no refactoring culture)
+- Why is dead code never removed? (Risk aversion, change management overhead, "if it ain't broke")
+- How does the fictional developer history (JRK 1974, PMR 1983, SLW 1991, Y2K 2002) mirror real mainframe codebases?
+
+**Key teaching point**: **The spaghetti is intentional and contained to the payroll sidecar. All other COBOL in this project follows clean, modern practices. Every anti-pattern is documented in KNOWN_ISSUES.md.**
+
+---
+
+## Lesson 10: Static Analysis — Tools That Understand Spaghetti
+
+**Objective**: Use analysis tools to systematically understand legacy COBOL code that is too tangled to read manually.
+
+**Files to use**:
+- `python/cobol_analyzer/` — The 5 analysis modules
+- `COBOL-BANKING/payroll/src/PAYROLL.cob` — Primary analysis target
+- Web console → Analysis tab — Visual analysis interface
+
+**Key concepts**:
+- Call graph analysis — mapping paragraph dependencies by edge type
+- Execution tracing — following GO TO/ALTER chains deterministically
+- Dead code detection — classifying paragraphs as REACHABLE, DEAD, or ALTER_CONDITIONAL
+- Complexity scoring — quantifying anti-pattern density per paragraph
+- LLM-assisted analysis — tools provide structure, LLM provides interpretation
+
+**Activities**:
+1. Run `analyze_call_graph` on PAYROLL.cob — identify GOTO, ALTER, and FALL_THROUGH edges
+2. Run `trace_execution` from P-000 — compare the tool's path to your manual diagram from Lesson 9
+3. Run `detect_dead_code` — verify that P-085 is unreachable (cross-reference PY-05)
+4. Run `complexity` scoring — identify the highest-scoring (hotspot) paragraphs
+5. Run the compare view: PAYROLL.cob (spaghetti) vs TRANSACT.cob (clean) — quantify the difference
+6. Open the web console Analysis tab — visualize the call graph as an SVG
+
+**Discussion points**:
+- How do these tools change the LLM's ability to explain code? (Structured context vs. raw source)
+- What can static analysis detect that a human reviewer might miss? (Fall-through edges, ALTER targets)
+- What are the limits of static analysis? (Cannot detect runtime data-dependent paths)
+
+**Key teaching point**: **An LLM cannot reliably trace GO TO chains across 500 lines, but deterministic tools can — then the LLM interprets the structured results. This is the "tool-augmented LLM" pattern.**
+
+---
+
 ## Assessment Ideas
 
 ### Practical
 1. Add a new account type (e.g., 'M' for money market) to ACCTREC.cpy and update COMCODE.cpy
 2. Add a new report type to REPORTS.cob (e.g., "HIGH-BALANCE" — accounts over $100K)
 3. Write a Python test that verifies Mode B matches COBOL output
+4. Analyze an unfamiliar COBOL program using the analysis tools and write a summary of its structure, hotspots, and dead code
 
 ### Written
 1. Explain why COBOL uses implied decimals instead of floating-point
 2. Describe the 3-leg settlement process and why it exists
 3. Compare the "load all, modify, write all" file pattern to a modern database UPDATE
 4. Explain what tamper detection catches and what it cannot catch
+5. Explain why ALTER is more dangerous than GO TO (use the knowledge base entry)
 
 ### Discussion
 1. "COBOL should be replaced with modern languages." Argue for and against.
 2. If you had to add real-time transaction processing to this system, what would change?
 3. How would you add encryption at rest without modifying the COBOL programs?
+4. Compare the complexity scores of PAYROLL.cob vs TRANSACT.cob — what drives the difference?

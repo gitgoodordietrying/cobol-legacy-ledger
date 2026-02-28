@@ -76,6 +76,9 @@ PERMISSIONS: Dict[Role, Set[str]] = {
         # Node management
         "node.manage",             # scripts: seed.sh
         "node.configure",          # Environment configuration
+        # Payroll operations
+        "payroll.read",            # List employees, view stubs
+        "payroll.process",         # Run payroll cycle
     },
     Role.AUDITOR: {
         # Read accounts — needed to verify balances
@@ -88,12 +91,16 @@ PERMISSIONS: Dict[Role, Set[str]] = {
         "batch.read", "batch.audit",
         # Read COBOL source — for code review
         "cobol.read",
+        # Read payroll data — auditors need to verify payroll
+        "payroll.read",
     },
     Role.OPERATOR: {
         # Read accounts — needed to verify balance before transaction
         "accounts.read",
         # Process transactions — the operator's primary job
         "transactions.process", "transactions.read",
+        # Payroll — operators can run payroll cycles
+        "payroll.read", "payroll.process",
         # View chain — but cannot verify/tamper-detect (separation of duties)
         "chain.view",
         # Read batch results

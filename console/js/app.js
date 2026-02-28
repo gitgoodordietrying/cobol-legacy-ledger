@@ -19,6 +19,7 @@ const App = (() => {
     CobolViewer.init();
     Dashboard.init();
     Chat.init();
+    Analysis.init();
 
     // View switching
     document.querySelectorAll('.nav__tab').forEach(tab => {

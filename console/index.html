@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/dashboard.css">
   <link rel="stylesheet" href="css/chat.css">
+  <link rel="stylesheet" href="css/analysis.css">
 </head>
 <body>
 
@@ -24,6 +25,7 @@
     <span class="nav__brand">COBOL Legacy Ledger</span>
     <div class="nav__tabs">
       <button class="nav__tab nav__tab--active" data-view="dashboard">Dashboard</button>
+      <button class="nav__tab" data-view="analysis">Analysis</button>
       <button class="nav__tab" data-view="chat">Chat</button>
     </div>
     <div class="nav__spacer"></div>
@@ -128,6 +130,66 @@
               <span style="color: var(--text-muted)">Loading...</span>
             </div>
           </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ═══ Analysis View ═══════════════════════════════════════ -->
+    <section class="view" id="view-analysis">
+      <div class="dashboard-grid" style="grid-template-columns: 1fr;">
+
+        <!-- Analysis Controls -->
+        <div class="glass controls" id="analysisControls">
+          <select class="select" id="analysisFileSelect">
+            <option value="PAYROLL.cob">PAYROLL.cob (spaghetti)</option>
+            <option value="TAXCALC.cob">TAXCALC.cob (nested IF)</option>
+            <option value="DEDUCTN.cob">DEDUCTN.cob (mixed)</option>
+            <option value="PAYBATCH.cob">PAYBATCH.cob (Y2K)</option>
+            <option value="TRANSACT.cob" selected>TRANSACT.cob (clean)</option>
+            <option value="ACCOUNTS.cob">ACCOUNTS.cob (clean)</option>
+            <option value="SETTLE.cob">SETTLE.cob (clean)</option>
+          </select>
+          <button class="btn btn--primary" id="btnAnalyze">Analyze</button>
+          <button class="btn" id="btnCompare">Compare Spaghetti vs Clean</button>
+          <div class="controls__divider"></div>
+          <div class="analysis-summary" id="analysisSummary"></div>
+        </div>
+
+        <!-- Analysis Content: Call Graph + Details -->
+        <div class="analysis-grid" id="analysisGrid">
+
+          <!-- Call Graph -->
+          <div class="glass call-graph" id="callGraphCard">
+            <div class="glass__header">
+              <span>Call Graph</span>
+              <div class="cg-legend" id="callGraphLegend"></div>
+            </div>
+            <div class="call-graph__svg-wrap" id="callGraphContainer"></div>
+          </div>
+
+          <!-- Execution Path / Details -->
+          <div class="glass" id="analysisDetailsCard">
+            <div class="glass__header">
+              <span>Execution Trace</span>
+              <select class="select" id="traceEntrySelect" style="width: auto; font-size: var(--text-xs);">
+                <option value="">Select entry point...</option>
+              </select>
+            </div>
+            <div class="exec-path" id="execPathContainer">
+              <span style="color: var(--text-muted); font-size: var(--text-xs);">Select an entry point to trace execution</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Compare Viewer (hidden by default) -->
+        <div class="glass" id="compareCard" style="display: none;">
+          <div class="glass__header">
+            <span>Complexity Comparison</span>
+            <button class="btn btn--sm" id="btnCloseCompare">Close</button>
+          </div>
+          <div id="compareContainer" style="height: 500px;"></div>
         </div>
 
       </div>
@@ -249,8 +311,11 @@
   <script src="js/api-client.js"></script>
   <script src="js/network-graph.js"></script>
   <script src="js/cobol-viewer.js"></script>
+  <script src="js/call-graph.js"></script>
+  <script src="js/compare-viewer.js"></script>
   <script src="js/dashboard.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/analysis.js"></script>
   <script src="js/app.js"></script>
 
 </body>
