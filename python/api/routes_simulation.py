@@ -103,6 +103,14 @@ def start_simulation(req: SimulationStartRequest, auth: AuthContext = Depends(ge
 
     def run_engine():
         try:
+            # Reconfigure stdout to handle Unicode on Windows (e.g., em-dashes
+            # in scenario descriptions) without crashing the engine thread.
+            import sys
+            if hasattr(sys.stdout, 'reconfigure'):
+                try:
+                    sys.stdout.reconfigure(errors='replace')
+                except Exception:
+                    pass
             _engine.run(days=req.days)
         except Exception as exc:
             # Log to server stderr so crashes are visible even without SSE subscribers
@@ -240,18 +248,30 @@ async def simulation_events(
     """
     import queue
 
-    q = queue.Queue(maxsize=500)
+    q = queue.Queue(maxsize=2000)
     _event_queues.append(q)
 
     async def event_generator():
         try:
             while True:
+                # Drain all pending events in a batch before sleeping.
+                # At high speed (time_scale near 0) hundreds of events can
+                # queue up between SSE polls — yielding them in a burst
+                # prevents the queue from overflowing and the UI from
+                # appearing frozen.
+                batch = []
                 try:
-                    event = q.get_nowait()
-                    data = json.dumps(event, default=str)
-                    yield f"data: {data}\n\n"
+                    while len(batch) < 50:  # Cap per-cycle to avoid blocking
+                        batch.append(q.get_nowait())
                 except queue.Empty:
-                    # Send keepalive comment every iteration
+                    pass
+
+                if batch:
+                    for event in batch:
+                        data = json.dumps(event, default=str)
+                        yield f"data: {data}\n\n"
+                else:
+                    # No events pending — send keepalive and wait
                     await asyncio.sleep(0.1)
                     yield ": keepalive\n\n"
         except asyncio.CancelledError:

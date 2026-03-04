@@ -102,7 +102,7 @@
   100% { r: 56; opacity: 0; }
 }
 
-/* ── Event Feed ──────────────────────────────────────────────────── */
+/* ── Transaction Log ────────────────────────────────────────────── */
 .event-feed {
   flex: 1;
   display: flex;
@@ -110,15 +110,59 @@
   min-height: 0;
 }
 
-/* ── COBOL Viewer ────────────────────────────────────────────────── */
-.cobol-viewer {
+/* ── Narrative Banner ────────────────────────────────────────────── */
+.dashboard-grid__narrative {
+  padding: var(--sp-2) var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  border-left: 3px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-sm);
+  transition: all 300ms ease;
+}
+
+.dashboard-grid__narrative--warning {
+  border-left-color: var(--warning);
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.dashboard-grid__narrative--danger {
+  border-left-color: var(--danger);
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.dashboard-grid__narrative--success {
+  border-left-color: var(--success);
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.06);
+}
+
+/* ── Controls Action + Hint ─────────────────────────────────────── */
+.controls__action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.controls__hint {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── COBOL Live Ticker ──────────────────────────────────────────── */
+.cobol-ticker {
   flex: 1 1 0;
   min-height: 200px;
   display: flex;
   flex-direction: column;
 }
 
-.cobol-viewer__controls {
+.cobol-ticker__header {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -126,7 +170,33 @@
   border-bottom: 1px solid var(--glass-border);
 }
 
-.cobol-viewer__source {
+.cobol-ticker__file {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.cobol-ticker__file:hover {
+  color: #93c5fd;
+}
+
+.cobol-ticker__sep {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.cobol-ticker__para {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.cobol-ticker__source {
   flex: 1;
   overflow: auto;
   padding: var(--sp-3);
@@ -134,6 +204,22 @@
   font-size: var(--text-xs);
   line-height: 1.6;
   min-height: 0;
+  white-space: pre;
+  tab-size: 4;
+}
+
+/* ── COBOL Full-File Modal ──────────────────────────────────────── */
+.popup--wide {
+  max-width: 900px;
+  width: 90vw;
+}
+
+.cobol-modal__source {
+  max-height: 60vh;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
   white-space: pre;
   tab-size: 4;
 }
@@ -172,13 +258,70 @@
   font-weight: 600;
 }
 
-/* ── Event Feed Color Coding ─────────────────────────────────────── */
-.feed__item--deposit  { border-left: 3px solid #22c55e; padding-left: 8px; }
-.feed__item--withdraw { border-left: 3px solid #ef4444; padding-left: 8px; }
-.feed__item--transfer { border-left: 3px solid #3b82f6; padding-left: 8px; }
-.feed__item--settlement { border-left: 3px solid #a855f7; padding-left: 8px; }
-.feed__item--compliance { border-left: 3px solid #eab308; padding-left: 8px; color: #eab308; }
-.feed__item--error    { border-left: 3px solid #ef4444; padding-left: 8px; color: #ef4444; font-weight: 600; }
+/* ── Node Health Ring ────────────────────────────────────────────── */
+.node-health-ring {
+  transition: stroke 400ms ease;
+}
+
+/* ── Event Feed — Structured Grid Items ─────────────────────────── */
+.feed__item {
+  display: grid;
+  grid-template-columns: 28px 32px 1fr auto;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: var(--sp-1) var(--sp-3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  animation: feedSlideIn 200ms ease-out;
+}
+
+@keyframes feedSlideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.feed__item--deposit    { border-left: 3px solid #22c55e; }
+.feed__item--withdraw   { border-left: 3px solid #ef4444; }
+.feed__item--transfer   { border-left: 3px solid #3b82f6; }
+.feed__item--settlement { border-left: 3px solid #a855f7; }
+.feed__item--scenario   { border-left: 3px solid #f59e0b; }
+.feed__item--error      { border-left: 3px solid #ef4444; }
+.feed__item--default    { border-left: 3px solid var(--glass-border); }
+
+.feed__day {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.feed__type {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.feed__type--deposit    { color: #22c55e; }
+.feed__type--withdraw   { color: #ef4444; }
+.feed__type--transfer   { color: #3b82f6; }
+.feed__type--settlement { color: #a855f7; }
+.feed__type--scenario   { color: #f59e0b; }
+.feed__type--error      { color: #ef4444; }
+.feed__type--default    { color: var(--text-muted); }
+
+.feed__details {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.feed__status { font-weight: 600; }
+.feed__status--ok   { color: #22c55e; }
+.feed__status--fail { color: #ef4444; }
 
 .node-detail__chain {
   display: flex;

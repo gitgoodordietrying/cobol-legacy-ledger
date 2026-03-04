@@ -259,7 +259,7 @@ class SimulationStartRequest(BaseModel):
     """Request body for POST /api/simulation/start."""
     days: int = Field(default=25, gt=0, le=365)    # Number of days to simulate
     seed: Optional[int] = None                      # RNG seed for reproducibility
-    time_scale: int = Field(default=0, ge=0)        # 0=max speed, 3600=1s=1hr
+    time_scale: float = Field(default=0, ge=0)      # 0=max speed, 0.5=demo, 3600=1s=1hr
     scenarios: bool = True                          # Enable scripted events
 
 

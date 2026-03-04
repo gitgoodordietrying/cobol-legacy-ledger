@@ -426,7 +426,7 @@ class SimulationEngine:
     def __init__(
         self,
         data_dir: str = "COBOL-BANKING/data",
-        time_scale: int = 3600,
+        time_scale: float = 3600,
         tx_range: Tuple[int, int] = (25, 100),
         verify_every: int = 5,
         seed: Optional[int] = None,
@@ -1152,6 +1152,17 @@ class SimulationEngine:
         # Flush logs to disk after each day
         self.logger.flush()
 
+        # Emit day_end event with cumulative stats so the dashboard can
+        # update counters in real-time instead of relying on polling.
+        self._fire_callback({
+            'type': 'day_end',
+            'day': day_num,
+            'completed': self.total_completed,
+            'failed': self.total_failed,
+            'volume': self.total_volume,
+            'narrative': f"Day {day_num} \u2014 {day_completed} transactions processed across 5 banks. ${day_volume:,.2f} volume.",
+        })
+
     # ── Integrity Verification ────────────────────────────────────
     # Periodic verification runs during simulation to demonstrate the
     # system catching anomalies in real-time (especially the tamper event).
@@ -1274,7 +1285,19 @@ class SimulationEngine:
                 if days is not None and day_num > days:
                     break
 
-                self._run_day(day_num, sim_date)
+                try:
+                    self._run_day(day_num, sim_date)
+                except OSError as exc:
+                    # On Windows, concurrent file access during settlement can
+                    # raise Errno 22 (Invalid argument) due to NTFS file locking.
+                    # Log the error and continue to the next day rather than
+                    # crashing the entire simulation.
+                    print(f"  !! Day {day_num} OS error (skipped): {exc}")
+                    self._fire_callback({
+                        'type': 'scenario', 'event_type': 'DAY_ERROR',
+                        'description': f"Day {day_num} skipped due to OS error: {exc}",
+                        'day': day_num,
+                    })
 
                 # Periodic verification
                 if self.verify_every > 0 and day_num % self.verify_every == 0:

@@ -32,8 +32,8 @@
     <div class="nav__spacer"></div>
     <div class="health-dot" id="healthDot" title="API health"></div>
     <select class="select" id="roleSelect" title="RBAC role — operator or admin required to run simulations">
-      <option value="admin">admin</option>
-      <option value="operator" selected>operator</option>
+      <option value="admin" selected>admin</option>
+      <option value="operator">operator</option>
       <option value="auditor">auditor</option>
       <option value="viewer">viewer</option>
     </select>
@@ -53,11 +53,11 @@
 
           <div class="stat">
             <span class="stat__value" id="statCompleted">0</span>
-            <span class="stat__label">OK</span>
+            <span class="stat__label">Completed</span>
           </div>
           <div class="stat">
             <span class="stat__value" id="statFailed">0</span>
-            <span class="stat__label">Fail</span>
+            <span class="stat__label">Failed</span>
           </div>
           <div class="stat">
             <span class="stat__value" id="statVolume">$0</span>
@@ -80,8 +80,19 @@
 
           <div class="controls__divider"></div>
 
-          <button class="btn btn--warning btn--sm" id="btnTamper" title="Tamper BANK_C balance">Tamper</button>
-          <button class="btn btn--success btn--sm" id="btnVerify" title="Cross-node verification">Verify</button>
+          <div class="controls__action">
+            <button class="btn btn--warning btn--sm" id="btnTamper" title="Tamper BANK_C balance">Corrupt Ledger</button>
+            <span class="controls__hint">Modify BANK_C balance directly</span>
+          </div>
+          <div class="controls__action">
+            <button class="btn btn--success btn--sm" id="btnVerify" title="Cross-node verification">Integrity Check</button>
+            <span class="controls__hint">SHA-256 cross-node verification</span>
+          </div>
+        </div>
+
+        <!-- Narrative Banner -->
+        <div class="dashboard-grid__narrative" id="narrativeBanner">
+          <span id="narrativeText">Five banks, one clearing house. Hit Start to run a 25-day banking simulation.</span>
         </div>
 
         <!-- Network Graph -->
@@ -93,13 +104,13 @@
           <div class="network-graph__svg-wrap" id="graphContainer"></div>
         </div>
 
-        <!-- Sidebar: Event Feed + COBOL Viewer -->
+        <!-- Sidebar: Transaction Log + COBOL Viewer -->
         <div class="dashboard-grid__sidebar">
 
-          <!-- Event Feed -->
+          <!-- Transaction Log -->
           <div class="glass event-feed" id="eventFeed">
             <div class="glass__header">
-              <span>Event Feed</span>
+              <span>Transaction Log</span>
               <span class="badge" id="feedCount">0</span>
             </div>
             <div class="feed" id="feedList">
@@ -107,28 +118,20 @@
             </div>
           </div>
 
-          <!-- COBOL Viewer -->
-          <div class="glass cobol-viewer" id="cobolViewer">
+          <!-- COBOL Live Ticker -->
+          <div class="glass cobol-ticker" id="cobolViewer">
             <div class="glass__header">
-              <span>COBOL Source</span>
+              <span>Live COBOL</span>
+              <span class="badge badge--info" id="cobolProgramBadge">—</span>
             </div>
-            <div class="cobol-viewer__controls">
-              <select class="select" id="cobolFileSelect">
-                <option value="SMOKETEST.cob">SMOKETEST.cob</option>
-                <option value="TRANSACT.cob">TRANSACT.cob</option>
-                <option value="ACCOUNTS.cob">ACCOUNTS.cob</option>
-                <option value="VALIDATE.cob">VALIDATE.cob</option>
-                <option value="SETTLE.cob">SETTLE.cob</option>
-                <option value="SIMULATE.cob">SIMULATE.cob</option>
-                <option value="INTEREST.cob">INTEREST.cob</option>
-                <option value="FEES.cob">FEES.cob</option>
-                <option value="RECONCILE.cob">RECONCILE.cob</option>
-                <option value="REPORTS.cob">REPORTS.cob</option>
-              </select>
-              <span class="badge" id="cobolParagraph">—</span>
+            <div class="cobol-ticker__header" id="cobolTickerHeader">
+              <span class="cobol-ticker__file" id="cobolFileName"
+                    title="Click to view full file">SMOKETEST.cob</span>
+              <span class="cobol-ticker__sep">/</span>
+              <span class="cobol-ticker__para" id="cobolParagraph">—</span>
             </div>
-            <div class="cobol-viewer__source" id="cobolSource">
-              <span style="color: var(--text-muted)">Loading...</span>
+            <div class="cobol-ticker__source" id="cobolSource">
+              <span style="color: var(--text-muted)">Start a simulation to see live COBOL execution</span>
             </div>
           </div>
         </div>
@@ -315,6 +318,31 @@
         <button class="popup__close" id="nodePopupClose">&times;</button>
       </div>
       <div class="glass__body" id="nodePopupBody"></div>
+    </div>
+  </div>
+
+  <!-- COBOL Full-File Modal (hidden by default) -->
+  <div class="popup-overlay" id="cobolModal" style="display: none;">
+    <div class="popup popup--wide glass">
+      <div class="glass__header">
+        <div style="display: flex; align-items: center; gap: var(--sp-2);">
+          <span id="cobolModalTitle">COBOL Source</span>
+          <select class="select" id="cobolFileSelect" style="width: auto;">
+            <option value="SMOKETEST.cob">SMOKETEST.cob</option>
+            <option value="TRANSACT.cob">TRANSACT.cob</option>
+            <option value="ACCOUNTS.cob">ACCOUNTS.cob</option>
+            <option value="VALIDATE.cob">VALIDATE.cob</option>
+            <option value="SETTLE.cob">SETTLE.cob</option>
+            <option value="SIMULATE.cob">SIMULATE.cob</option>
+            <option value="INTEREST.cob">INTEREST.cob</option>
+            <option value="FEES.cob">FEES.cob</option>
+            <option value="RECONCILE.cob">RECONCILE.cob</option>
+            <option value="REPORTS.cob">REPORTS.cob</option>
+          </select>
+        </div>
+        <button class="popup__close" id="cobolModalClose">&times;</button>
+      </div>
+      <div class="glass__body cobol-modal__source" id="cobolModalSource"></div>
     </div>
   </div>
 

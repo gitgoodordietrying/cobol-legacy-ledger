@@ -1,8 +1,8 @@
 /**
- * dashboard.js -- Simulation controls, event feed, and node detail popup.
+ * dashboard.js -- Simulation controls, transaction log, and node detail popup.
  *
  * Wires Start/Pause/Stop buttons to the simulation API, connects SSE for
- * real-time event streaming, maintains the event feed (capped at 200 items),
+ * real-time event streaming, maintains the transaction log (capped at 200 items),
  * and updates stats counters. Also handles Tamper Demo and Verify All.
  */
 
@@ -11,6 +11,32 @@ const Dashboard = (() => {
   let sse = null;
   let feedCount = 0;
   const MAX_FEED = 200;
+
+  const IDLE_NARRATIVE = 'Five banks, one clearing house. Hit Start to run a 25-day banking simulation.';
+
+  // Scenario event_type → narrative modifier mapping
+  const SCENARIO_MODIFIERS = {
+    LARGE_TRANSFER: 'warning',
+    SUSPICIOUS_BURST: 'warning',
+    FREEZE_ACCOUNT: 'warning',
+    DRAIN_TRANSFERS: 'warning',
+    CLOSE_ACCOUNT: null,       // default style
+    TAMPER_BALANCE: 'danger',
+  };
+
+  /**
+   * Update the narrative banner text and style modifier.
+   * @param {string} text - narrative message
+   * @param {string|null} modifier - 'warning', 'danger', 'success', or null for default
+   */
+  function setNarrative(text, modifier) {
+    const banner = document.getElementById('narrativeBanner');
+    if (!banner) return;
+    const textEl = document.getElementById('narrativeText');
+    if (textEl) textEl.textContent = text;
+    banner.className = 'dashboard-grid__narrative'
+      + (modifier ? ` dashboard-grid__narrative--${modifier}` : '');
+  }
 
   /**
    * Initialize all dashboard controls and bindings.
@@ -32,7 +58,7 @@ const Dashboard = (() => {
 
     // Poll status to restore state on refresh
     pollStatus();
-    setInterval(pollStatus, 10000);
+    setInterval(pollStatus, 3000);
   }
 
   /**
@@ -45,6 +71,7 @@ const Dashboard = (() => {
       connectSSE();
       setButtonState('running');
       clearFeed();
+      setNarrative(`Simulation running \u2014 ${days} days scheduled.`, null);
       Utils.showToast(`Simulation started (${days} days)`, 'success');
     } catch (err) {
       const msg = err.message.includes('permission') || err.message.includes('403')
@@ -62,6 +89,9 @@ const Dashboard = (() => {
       await ApiClient.post('/api/simulation/stop');
       disconnectSSE();
       setButtonState('stopped');
+      const vol = document.getElementById('statVolume')?.textContent || '$0';
+      const done = document.getElementById('statCompleted')?.textContent || '0';
+      setNarrative(`Simulation complete \u2014 ${done} transactions, ${vol} total volume.`, 'success');
       Utils.showToast('Simulation stopped', 'info');
     } catch (err) {
       Utils.showToast(err.message, 'danger');
@@ -82,8 +112,10 @@ const Dashboard = (() => {
       document.getElementById('statFailed').textContent = '0';
       document.getElementById('statVolume').textContent = '$0';
       clearFeed();
-      // Refresh graph node data
-      NetworkGraph.refreshNodeData();
+      setNarrative(IDLE_NARRATIVE, null);
+      // Reset health rings to neutral, then refresh after backend finishes seeding
+      NetworkGraph.resetHealthRings();
+      setTimeout(() => NetworkGraph.refreshNodeData(), 500);
       Utils.showToast('All nodes re-seeded with fresh demo data', 'success');
     } catch (err) {
       Utils.showToast(err.message, 'danger');
@@ -152,6 +184,9 @@ const Dashboard = (() => {
           if (!status.running) {
             disconnectSSE();
             setButtonState('stopped');
+            const vol = document.getElementById('statVolume')?.textContent || '$0';
+            const done = document.getElementById('statCompleted')?.textContent || '0';
+            setNarrative(`Simulation complete \u2014 ${done} transactions, ${vol} total volume.`, 'success');
           }
         });
       }, 2000);
@@ -172,6 +207,23 @@ const Dashboard = (() => {
    * Handle an incoming SSE event.
    */
   function handleEvent(event) {
+    // day_end is a control event with cumulative stats — update counters
+    // immediately and skip animation/feed (no transaction to visualize).
+    if (event.type === 'day_end') {
+      setText('dayCounter', `Day ${event.day}`);
+      setText('statCompleted', event.completed.toLocaleString());
+      setText('statFailed', event.failed.toLocaleString());
+      setText('statVolume', Utils.formatCurrency(event.volume));
+      if (event.narrative) setNarrative(event.narrative, null);
+      return;
+    }
+
+    // Scenario events use description as narrative with colored modifier
+    if (event.type === 'scenario' && event.description) {
+      const modifier = SCENARIO_MODIFIERS[event.event_type] ?? null;
+      setNarrative(event.description, modifier);
+    }
+
     // Update stats
     updateStats(event);
 
@@ -207,7 +259,8 @@ const Dashboard = (() => {
   }
 
   /**
-   * Add an item to the event feed.
+   * Add an item to the transaction log.
+   * Structured 4-column layout: day badge | type badge | details | status.
    */
   function addFeedItem(event) {
     const feedList = document.getElementById('feedList');
@@ -217,48 +270,81 @@ const Dashboard = (() => {
     const emptyEl = feedList.querySelector('.feed__empty');
     if (emptyEl) emptyEl.remove();
 
-    // Determine CSS class based on event type and content
-    let cls = 'feed__item';
-    if (event.type === 'scenario') {
-      cls += event.event_type === 'TAMPER_BALANCE' ? ' feed__item--tamper' : ' feed__item--scenario';
-    } else if (event.type === 'external') {
-      cls += ' feed__item--external';
-    }
+    // Classify event → typeClass, typeLabel, detailText, statusLabel, statusClass
+    let typeClass = 'default';
+    let typeLabel = '???';
+    let detailText = '';
+    let statusLabel = '';
+    let statusClass = '';
 
-    // Color-coded event classes based on transaction type
-    const txType = (event.type || '').toUpperCase().slice(0, 3);
-    if (txType === 'DEP' || event.type === 'deposit') {
-      cls += ' feed__item--deposit';
-    } else if (txType === 'WIT' || event.type === 'withdraw') {
-      cls += ' feed__item--withdraw';
-    } else if (event.type === 'settlement' || (event.event_type || '').includes('SETTLE')) {
-      cls += ' feed__item--settlement';
-    } else if (event.dest_bank || (event.description || '').includes('→')) {
-      cls += ' feed__item--transfer';
-    }
-    // Compliance / error flags from text content
-    const desc = (event.description || '') + (event.event_type || '');
-    if (/SUSPICIOUS|LARGE_TRANSFER|COMPLIANCE/i.test(desc)) {
-      cls += ' feed__item--compliance';
-    } else if (/VERIFY_FAIL|FAIL/i.test(desc) && event.type === 'scenario') {
-      cls += ' feed__item--error';
-    }
-
-    // Build display text
-    let text = '';
     if (event.type === 'scenario') {
-      text = `[D${event.day || '?'}] ${event.event_type}: ${Utils.truncate(event.description, 60)}`;
-    } else if (event.type === 'external') {
-      const status = event.status === 'COMPLETED' ? 'OK' : 'FAIL';
-      text = `[D${event.day || '?'}] ${event.bank}→${event.dest_bank} $${event.amount?.toFixed(2)} ${status}`;
+      typeClass = /TAMPER|SUSPICIOUS|LARGE_TRANSFER|COMPLIANCE/i.test(event.event_type || '')
+        ? 'scenario' : 'scenario';
+      typeLabel = 'SCN';
+      detailText = `${event.event_type}: ${Utils.truncate(event.description, 55)}`;
+      // Scenarios don't have OK/FAIL status
+    } else if (event.type === 'external' || event.type === 'settlement') {
+      typeClass = 'settlement';
+      typeLabel = 'STL';
+      detailText = `${event.bank}\u2192${event.dest_bank} $${event.amount?.toFixed(2) || '0.00'}`;
+      statusLabel = event.status === 'COMPLETED' ? 'OK' : 'FAIL';
+      statusClass = statusLabel === 'OK' ? 'ok' : 'fail';
+    } else if (event.type === 'deposit') {
+      typeClass = 'deposit';
+      typeLabel = 'DEP';
+      detailText = `${event.bank} ${event.account} $${event.amount?.toFixed(2) || '0.00'}`;
+      statusLabel = event.status === '00' ? 'OK' : 'FAIL';
+      statusClass = statusLabel === 'OK' ? 'ok' : 'fail';
+    } else if (event.type === 'withdraw') {
+      typeClass = 'withdraw';
+      typeLabel = 'WDR';
+      detailText = `${event.bank} ${event.account} $${event.amount?.toFixed(2) || '0.00'}`;
+      statusLabel = event.status === '00' ? 'OK' : 'FAIL';
+      statusClass = statusLabel === 'OK' ? 'ok' : 'fail';
+    } else if (event.dest_bank || (event.description || '').includes('\u2192')) {
+      typeClass = 'transfer';
+      typeLabel = 'TFR';
+      detailText = `${event.bank}\u2192${event.dest_bank || '?'} $${event.amount?.toFixed(2) || '0.00'}`;
+      statusLabel = event.status === '00' || event.status === 'COMPLETED' ? 'OK' : 'FAIL';
+      statusClass = statusLabel === 'OK' ? 'ok' : 'fail';
     } else {
-      const status = event.status === '00' ? 'OK' : 'FAIL';
-      text = `[D${event.day || '?'}] ${event.bank} ${event.type?.toUpperCase()?.slice(0,3)} ${event.account} $${event.amount?.toFixed(2)} ${status}`;
+      // Fallback for any other event type
+      typeClass = 'default';
+      typeLabel = (event.type || '???').toUpperCase().slice(0, 3);
+      detailText = `${event.bank || ''} ${event.account || ''} $${event.amount?.toFixed(2) || '0.00'}`;
+      statusLabel = event.status === '00' ? 'OK' : event.status === 'COMPLETED' ? 'OK' : 'FAIL';
+      statusClass = statusLabel === 'OK' ? 'ok' : 'fail';
     }
 
+    // Override for error/compliance scenarios
+    const desc = (event.description || '') + (event.event_type || '');
+    if (/VERIFY_FAIL/i.test(desc)) statusClass = 'fail';
+    if (/TAMPER_BALANCE/i.test(event.event_type || '')) typeClass = 'error';
+
+    // Build structured item
     const item = document.createElement('div');
-    item.className = cls;
-    item.textContent = text;
+    item.className = `feed__item feed__item--${typeClass}`;
+
+    const dayBadge = document.createElement('span');
+    dayBadge.className = 'feed__day';
+    dayBadge.textContent = `D${event.day || '?'}`;
+
+    const typeBadge = document.createElement('span');
+    typeBadge.className = `feed__type feed__type--${typeClass}`;
+    typeBadge.textContent = typeLabel;
+
+    const details = document.createElement('span');
+    details.className = 'feed__details';
+    details.textContent = detailText;
+
+    item.append(dayBadge, typeBadge, details);
+
+    if (statusLabel) {
+      const status = document.createElement('span');
+      status.className = `feed__status feed__status--${statusClass}`;
+      status.textContent = statusLabel;
+      item.appendChild(status);
+    }
 
     // Insert at top (newest first)
     feedList.insertBefore(item, feedList.firstChild);
@@ -274,7 +360,7 @@ const Dashboard = (() => {
   }
 
   /**
-   * Clear the event feed.
+   * Clear the transaction log.
    */
   function clearFeed() {
     const feedList = document.getElementById('feedList');
@@ -315,7 +401,8 @@ const Dashboard = (() => {
   async function tamperDemo() {
     try {
       const result = await ApiClient.post('/api/tamper-demo', {});
-      Utils.showToast(`Tampered ${result.node}/${result.account_id} → $${result.new_amount.toLocaleString()}`, 'danger');
+      setNarrative(`BANK_C\u2019s balance was corrupted to $${result.new_amount.toLocaleString()}. Run Integrity Check to detect it.`, 'danger');
+      Utils.showToast(`Tampered ${result.node}/${result.account_id} \u2192 $${result.new_amount.toLocaleString()}`, 'danger');
     } catch (err) {
       Utils.showToast(err.message, 'danger');
     }
@@ -333,6 +420,11 @@ const Dashboard = (() => {
       const msg = intact && matched
         ? `All chains intact, ${result.settlements_checked} settlements matched`
         : `Issues: ${result.anomalies?.length || 0} anomalies detected`;
+      if (intact && matched) {
+        setNarrative('All chains intact. SHA-256 hashes verified across all 6 nodes.', 'success');
+      } else {
+        setNarrative(`Integrity breach detected \u2014 ${result.anomalies?.length || 0} anomalies found.`, 'danger');
+      }
       Utils.showToast(msg, type);
 
       // Add to feed

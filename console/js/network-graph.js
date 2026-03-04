@@ -3,7 +3,7 @@
  *
  * CLEARING sits at the center, 5 banks are arranged at 72-degree intervals
  * on a radius. Static spoke lines connect each bank to the hub. Nodes show
- * chain health (green dot = valid, red = broken). Click a node to open the
+ * chain health (green ring = valid, red = broken). Click a node to open the
  * detail popup. Transaction events animate as edge flashes or node pulses.
  */
 
@@ -28,7 +28,7 @@ const NetworkGraph = (() => {
 
   let svg = null;
   let positions = {};
-  let healthDots = {};
+  let healthRings = {};
 
   /**
    * Calculate node positions: hub at center, banks at 72-degree intervals.
@@ -106,6 +106,15 @@ const NetworkGraph = (() => {
       const nodeR = node === 'CLEARING' ? 46 : 38;
       const glowR = node === 'CLEARING' ? 42 : 34;
 
+      // Health ring (wider, semi-transparent — acts as glow behind outer ring)
+      const healthRing = svgEl('circle', {
+        cx: pos.x, cy: pos.y, r: nodeR + 3,
+        stroke: 'transparent', 'stroke-width': 4,
+        fill: 'none', opacity: 0.6,
+        class: 'node-health-ring',
+      });
+      healthRings[node] = healthRing;
+
       // Outer ring
       const ring = svgEl('circle', {
         cx: pos.x, cy: pos.y, r: nodeR,
@@ -132,19 +141,11 @@ const NetworkGraph = (() => {
       });
       sublabel.textContent = SUBLABELS[node];
 
-      // Chain health dot
-      const dotY = pos.y + nodeR + 12;
-      const dot = svgEl('circle', {
-        cx: pos.x, cy: dotY, r: 4,
-        fill: '#64748b', class: 'chain-health-dot',
-      });
-      healthDots[node] = dot;
-
+      g.appendChild(healthRing);
       g.appendChild(glow);
       g.appendChild(ring);
       g.appendChild(label);
       g.appendChild(sublabel);
-      g.appendChild(dot);
 
       // Click handler
       g.addEventListener('click', () => {
@@ -163,23 +164,32 @@ const NetworkGraph = (() => {
 
   /**
    * Animate a transaction: external flashes edge src→HUB→dest, internal pulses source.
+   * Capped at 10 concurrent animations to prevent SVG element buildup during bursts.
    * @param {object} event - SSE event data
    */
+  let _activeAnims = 0;
+  const MAX_ANIMS = 10;
+
   function animateTransaction(event) {
     if (!svg) return;
+    if (_activeAnims >= MAX_ANIMS) return;  // Skip during burst
     const animLayer = svg.getElementById('animLayer');
     if (!animLayer) return;
 
     if (event.type === 'external' && event.dest_bank) {
+      _activeAnims++;
       // Flash source → CLEARING
       flashEdge(animLayer, event.bank, 'CLEARING', Utils.bankColorHex(event.bank));
       // Flash CLEARING → dest (delayed)
       setTimeout(() => {
         flashEdge(animLayer, 'CLEARING', event.dest_bank, Utils.bankColorHex(event.dest_bank));
       }, 300);
+      setTimeout(() => { _activeAnims--; }, 650);
     } else if (event.bank) {
+      _activeAnims++;
       // Internal: pulse the source node
       pulseNode(animLayer, event.bank);
+      setTimeout(() => { _activeAnims--; }, 550);
     }
   }
 
@@ -210,21 +220,39 @@ const NetworkGraph = (() => {
   }
 
   /**
-   * Refresh chain health dots by polling GET /api/nodes.
+   * Refresh chain health rings by polling GET /api/nodes.
    */
   async function refreshNodeData() {
     try {
       const nodes = await ApiClient.get('/api/nodes');
       nodes.forEach(n => {
-        const dot = healthDots[n.node];
-        if (dot) {
-          dot.setAttribute('fill', n.chain_valid ? '#22c55e' : '#ef4444');
-        }
+        setNodeHealth(n.node, n.chain_valid);
       });
     } catch {
-      // Silently fail — dots stay gray
+      // Silently fail — rings stay transparent
     }
   }
 
-  return { init, animateTransaction, refreshNodeData };
+  /**
+   * Set a single node's health ring color.
+   * @param {string} node - Node name (e.g. 'BANK_A')
+   * @param {boolean} isValid - true = green, false = red
+   */
+  function setNodeHealth(node, isValid) {
+    const ring = healthRings[node];
+    if (ring) {
+      ring.setAttribute('stroke', isValid ? '#22c55e' : '#ef4444');
+    }
+  }
+
+  /**
+   * Reset all health rings to transparent (neutral state).
+   */
+  function resetHealthRings() {
+    Object.values(healthRings).forEach(ring => {
+      ring.setAttribute('stroke', 'transparent');
+    });
+  }
+
+  return { init, animateTransaction, refreshNodeData, setNodeHealth, resetHealthRings };
 })();

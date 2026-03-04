@@ -2,7 +2,7 @@
 End-to-end Playwright tests for the web console.
 
 These tests launch a real browser against the running FastAPI server and
-exercise the dashboard (simulation controls, network graph, event feed,
+exercise the dashboard (simulation controls, network graph, transaction log,
 COBOL viewer, reset, onboarding), the chatbot UI (messages, tool calls,
 provider switching, sessions), and the teacher persona (COBOL exploration,
 spaghetti analysis, code comparison, CoBot demo).
@@ -416,7 +416,8 @@ class TestCobolViewer:
     """Test COBOL source viewer functionality."""
 
     def test_default_file_loads(self, dash: Page):
-        """Default SMOKETEST.cob loads with COBOL content."""
+        """showSnippet loads SMOKETEST.cob into the ticker."""
+        dash.evaluate("CobolViewer.showSnippet('SMOKETEST.cob', null)")
         dash.wait_for_function(
             "document.querySelector('#cobolSource').textContent.length > 50",
             timeout=5000,
@@ -425,40 +426,24 @@ class TestCobolViewer:
         assert "IDENTIFICATION" in content or "DIVISION" in content or "PROGRAM-ID" in content
 
     def test_switch_to_transact(self, dash: Page):
-        """Selecting TRANSACT.cob loads transaction processing code."""
+        """showSnippet switches ticker to TRANSACT.cob."""
+        dash.evaluate("CobolViewer.showSnippet('TRANSACT.cob', 'PROCESS-DEPOSIT')")
         dash.wait_for_function(
             "document.querySelector('#cobolSource').textContent.length > 50",
             timeout=5000,
         )
-        dash.evaluate("""
-            const sel = document.querySelector('#cobolFileSelect');
-            sel.value = 'TRANSACT.cob';
-            sel.dispatchEvent(new Event('change'));
-        """)
-        dash.wait_for_function(
-            "!document.querySelector('#cobolSource').textContent.includes('Loading')",
-            timeout=5000,
-        )
         content = dash.locator("#cobolSource").text_content()
-        assert "TRANSACT" in content or "IDENTIFICATION" in content or "DIVISION" in content
+        assert "DEPOSIT" in content or "TRANSACT" in content
 
     def test_switch_to_settle(self, dash: Page):
-        """Selecting SETTLE.cob loads settlement code."""
+        """showSnippet switches ticker to SETTLE.cob."""
+        dash.evaluate("CobolViewer.showSnippet('SETTLE.cob', 'EXECUTE-SETTLEMENT')")
         dash.wait_for_function(
             "document.querySelector('#cobolSource').textContent.length > 50",
             timeout=5000,
         )
-        dash.evaluate("""
-            const sel = document.querySelector('#cobolFileSelect');
-            sel.value = 'SETTLE.cob';
-            sel.dispatchEvent(new Event('change'));
-        """)
-        dash.wait_for_function(
-            "!document.querySelector('#cobolSource').textContent.includes('Loading')",
-            timeout=5000,
-        )
         content = dash.locator("#cobolSource").text_content()
-        assert "SETTLE" in content or "DIVISION" in content
+        assert "SETTLE" in content or "SETTLEMENT" in content
 
     def test_all_ten_files_in_selector(self, dash: Page):
         """File selector has all 10 COBOL source files."""
@@ -468,6 +453,7 @@ class TestCobolViewer:
 
     def test_syntax_highlighting_present(self, dash: Page):
         """COBOL viewer applies syntax highlighting spans."""
+        dash.evaluate("CobolViewer.showSnippet('SMOKETEST.cob', null)")
         dash.wait_for_function(
             "document.querySelector('#cobolSource').textContent.length > 50",
             timeout=5000,
@@ -845,7 +831,11 @@ class TestNodePopupDegradation:
         nodes = dash.locator("#graphContainer svg .node-group")
         expect(nodes).to_have_count(6, timeout=5000)
         nodes.first.click()
-        dash.wait_for_timeout(2000)
+        dash.wait_for_function(
+            "(() => { const b = document.querySelector('#nodePopupBody'); "
+            "return b && b.textContent && !b.textContent.includes('Loading'); })()",
+            timeout=10000,
+        )
         popup = dash.locator("#nodePopup")
         if popup.is_visible():
             body = dash.locator("#nodePopupBody").text_content()
@@ -892,30 +882,25 @@ class TestTeacherCobolExploration:
     """Teacher browses COBOL source files to show students well-documented code."""
 
     def test_accounts_has_educational_comments(self, dash: Page):
-        """ACCOUNTS.cob contains COBOL CONCEPT: educational markers."""
-        dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.length > 50",
-            timeout=5000,
-        )
+        """ACCOUNTS.cob contains COBOL CONCEPT: educational markers (modal view)."""
+        # Open the modal with ACCOUNTS.cob to see the full file
         dash.evaluate("""
-            const sel = document.querySelector('#cobolFileSelect');
-            sel.value = 'ACCOUNTS.cob';
-            sel.dispatchEvent(new Event('change'));
+            document.getElementById('cobolModal').style.display = 'flex';
+            document.querySelector('#cobolFileSelect').value = 'ACCOUNTS.cob';
+            document.querySelector('#cobolFileSelect').dispatchEvent(new Event('change'));
         """)
         dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.includes('ACCOUNTS')",
+            "document.querySelector('#cobolModalSource').textContent.includes('ACCOUNTS')",
             timeout=5000,
         )
-        content = dash.locator("#cobolSource").text_content()
+        content = dash.locator("#cobolModalSource").text_content()
         assert "COBOL CONCEPT:" in content, \
             f"Expected educational markers in ACCOUNTS.cob, got: {content[:200]}"
 
     def test_cycle_through_multiple_files(self, dash: Page):
-        """Cycling through ACCOUNTS, INTEREST, SETTLE loads distinct programs."""
-        dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.length > 50",
-            timeout=5000,
-        )
+        """Cycling through ACCOUNTS, INTEREST, SETTLE loads distinct programs (modal)."""
+        # Open the modal
+        dash.evaluate("document.getElementById('cobolModal').style.display = 'flex';")
         contents = []
         for filename, program_id in [
             ("ACCOUNTS.cob", "ACCOUNTS"),
@@ -928,10 +913,10 @@ class TestTeacherCobolExploration:
                 sel.dispatchEvent(new Event('change'));
             """)
             dash.wait_for_function(
-                f"document.querySelector('#cobolSource').textContent.includes('{program_id}')",
+                f"document.querySelector('#cobolModalSource').textContent.includes('{program_id}')",
                 timeout=5000,
             )
-            content = dash.locator("#cobolSource").text_content()
+            content = dash.locator("#cobolModalSource").text_content()
             assert program_id in content, \
                 f"Expected {program_id} in {filename}, got: {content[:200]}"
             contents.append(content)
@@ -939,29 +924,23 @@ class TestTeacherCobolExploration:
         assert len(set(contents)) == 3, "Expected three distinct COBOL programs"
 
     def test_paragraph_navigator_highlights_code(self, dash: Page):
-        """CobolViewer.loadFile jumps to PROCESS-DEPOSIT in TRANSACT.cob."""
+        """showSnippet highlights PROCESS-DEPOSIT in TRANSACT.cob ticker."""
+        dash.evaluate("CobolViewer.showSnippet('TRANSACT.cob', 'PROCESS-DEPOSIT')")
         dash.wait_for_function(
             "document.querySelector('#cobolSource').textContent.length > 50",
             timeout=5000,
         )
-        dash.evaluate("CobolViewer.loadFile('TRANSACT.cob', 'PROCESS-DEPOSIT')")
-        dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.includes('TRANSACT')",
-            timeout=5000,
-        )
-        # Paragraph selector should show the target paragraph
+        # Paragraph indicator should show the target paragraph
         para_text = dash.locator("#cobolParagraph").text_content()
         assert "PROCESS-DEPOSIT" in para_text, \
-            f"Expected PROCESS-DEPOSIT in paragraph selector, got: {para_text}"
-        # Highlight spans should exist
-        highlights = dash.locator(".cobol-highlight")
-        assert highlights.count() > 0, "Expected highlighted spans in COBOL viewer"
-        # File selector should reflect TRANSACT.cob
-        selected = dash.evaluate(
-            "document.querySelector('#cobolFileSelect').value"
-        )
-        assert selected == "TRANSACT.cob", \
-            f"Expected file selector to show TRANSACT.cob, got: {selected}"
+            f"Expected PROCESS-DEPOSIT in paragraph indicator, got: {para_text}"
+        # Highlight spans should exist in the ticker
+        highlights = dash.locator("#cobolSource .cobol-highlight")
+        assert highlights.count() > 0, "Expected highlighted spans in COBOL ticker"
+        # File name should reflect TRANSACT.cob
+        file_text = dash.locator("#cobolFileName").text_content()
+        assert "TRANSACT.cob" in file_text, \
+            f"Expected TRANSACT.cob in file name, got: {file_text}"
 
 
 # ── Teacher Persona: Spaghetti Analysis ──────────────────────────
