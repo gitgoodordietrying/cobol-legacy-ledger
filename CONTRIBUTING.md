@@ -27,7 +27,7 @@ uvicorn python.api.app:app --reload
 
 1. **COBOL Immutability** — Never modify the COBOL programs. Wrap them with Python observation instead.
 2. **Educational Comments** — Every source file teaches concepts inline. New code should follow the same standard.
-3. **Test Everything** — Every feature must have tests. Current count: 742+ tests.
+3. **Test Everything** — Every feature must have tests. Current count: 800+ tests.
 4. **No Node.js** — The web console is static HTML/CSS/JS served via FastAPI. No npm, no build process.
 
 ## Code Style

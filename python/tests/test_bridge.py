@@ -577,5 +577,113 @@ def test_batch_processing_with_failures(bridge, temp_data_dir):
     assert result['summary']['failed'] == 1
 
 
+# ── Boundary Value Tests ──────────────────────────────────────────
+# Verify behavior at exact thresholds and limits.
+
+def test_fee_waiver_at_exact_threshold(temp_data_dir):
+    """Balance exactly at $5000.00 (waiver is > 5000, so fee IS assessed)."""
+    bridge = COBOLBridge(node="BANK_TEST", data_dir=str(temp_data_dir),
+                         bin_dir=str(temp_data_dir / "no-bin"))
+    bridge.seed_demo_data()
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Fee Boundary", "C", 5000.00, "A")
+    )
+    bridge.db.commit()
+    bridge._write_accounts_to_dat(bridge.load_accounts_from_dat() + [
+        {"id": "ACT-T-001", "name": "Fee Boundary", "type": "C",
+         "balance": 5000.00, "status": "A", "open_date": "20260217", "last_activity": "20260217"}
+    ])
+
+    result = bridge.run_fee_batch()
+    assert result["status"] == "00"
+    # $5000 is NOT > $5000, so fee should be assessed
+    assert result["total_fees"] > 0
+
+
+def test_fee_waiver_just_above_threshold(temp_data_dir):
+    """Balance at $5000.01 — fee IS waived (balance > 5000)."""
+    bridge = COBOLBridge(node="BANK_TEST", data_dir=str(temp_data_dir),
+                         bin_dir=str(temp_data_dir / "no-bin"))
+    bridge.seed_demo_data()
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Fee Waived", "C", 5000.01, "A")
+    )
+    bridge.db.commit()
+    bridge._write_accounts_to_dat(bridge.load_accounts_from_dat() + [
+        {"id": "ACT-T-001", "name": "Fee Waived", "type": "C",
+         "balance": 5000.01, "status": "A", "open_date": "20260217", "last_activity": "20260217"}
+    ])
+
+    before_balance = bridge.get_account("ACT-T-001")["balance"]
+    result = bridge.run_fee_batch()
+    after_balance = bridge.get_account("ACT-T-001")["balance"]
+    # Waived — balance should not decrease
+    assert after_balance == before_balance
+
+
+def test_interest_tier_boundary_at_10000(temp_data_dir):
+    """Balance at exactly $10000.00 gets the 1.5% tier (not 0.5%)."""
+    bridge = COBOLBridge(node="BANK_TEST", data_dir=str(temp_data_dir),
+                         bin_dir=str(temp_data_dir / "no-bin"))
+    bridge.seed_demo_data()
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Interest Boundary", "S", 10000.00, "A")
+    )
+    bridge.db.commit()
+    bridge._write_accounts_to_dat(bridge.load_accounts_from_dat() + [
+        {"id": "ACT-T-001", "name": "Interest Boundary", "type": "S",
+         "balance": 10000.00, "status": "A", "open_date": "20260217", "last_activity": "20260217"}
+    ])
+
+    result = bridge.run_interest_batch()
+    # $10000 is NOT < $10000, so it gets the 1.5% tier: 10000 * 0.015 / 12 = 12.50
+    assert result["total_interest"] > 0
+    acct = bridge.get_account("ACT-T-001")
+    expected_interest = round(10000.00 * 0.0150 / 12, 2)
+    assert acct["balance"] == 10000.00 + expected_interest
+
+
+def test_transaction_description_at_max_length(temp_data_dir):
+    """Description exactly at 40 characters (max PIC X(40))."""
+    bridge = COBOLBridge(node="BANK_TEST", data_dir=str(temp_data_dir),
+                         bin_dir=str(temp_data_dir / "no-bin"))
+    bridge.seed_demo_data()
+    bridge.db.execute(
+        "INSERT INTO accounts (id, name, type, balance, status) VALUES (?, ?, ?, ?, ?)",
+        ("ACT-T-001", "Desc Test", "C", 1000.00, "A")
+    )
+    bridge.db.commit()
+
+    desc = "A" * 40  # Exactly 40 chars
+    result = bridge.process_transaction("ACT-T-001", "D", 50.00, desc)
+    assert result["status"] == "00"
+
+
+# ── Malformed Data Tests ─────────────────────────────────────────
+
+def test_same_bank_transfer_via_settlement(temp_data_dir):
+    """Same-bank transfer (source_bank == dest_bank) processes normally."""
+    from python.settlement import SettlementCoordinator
+    # Settlement needs source bank + CLEARING (3-leg model)
+    for node in ("BANK_A", "CLEARING"):
+        b = COBOLBridge(node=node, data_dir=str(temp_data_dir),
+                        bin_dir=str(temp_data_dir / "no-bin"))
+        b.seed_demo_data()
+        b.close()
+
+    coord = SettlementCoordinator(data_dir=str(temp_data_dir),
+                                  force_mode_b=True)
+    result = coord.execute_transfer(
+        source_bank="BANK_A", source_account="ACT-A-001",
+        dest_bank="BANK_A", dest_account="ACT-A-002",
+        amount=50.00, description="Same bank transfer",
+    )
+    # Should complete all 3 settlement steps even within same bank
+    assert result.steps_completed == 3
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

@@ -11,6 +11,8 @@ const Analysis = (() => {
 
   // Source cache (file name -> source text)
   const sourceCache = {};
+  // Trace cache (paragraph name -> execution path)
+  const traceCache = {};
 
   // Payroll files are served from a different path
   const PAYROLL_FILES = new Set([
@@ -35,7 +37,7 @@ const Analysis = (() => {
       sourceCache[filename] = text;
       return text;
     } catch (e) {
-      Utils.showToast(`Failed to load ${filename}: ${e.message}`, 'error');
+      Utils.showToast(`Failed to load ${filename}: ${e.message}`, 'danger');
       return null;
     }
   }
@@ -79,7 +81,7 @@ const Analysis = (() => {
 
       Utils.showToast(`${filename}: ${complexityData.rating} (score ${complexityData.total_score})`, 'success');
     } catch (e) {
-      Utils.showToast(`Analysis failed: ${e.message}`, 'error');
+      Utils.showToast(`Analysis failed: ${e.message}`, 'danger');
     }
   }
 
@@ -142,11 +144,25 @@ const Analysis = (() => {
 
   /**
    * Trace execution from the selected entry point.
+   * @param {string} [overrideEntry] - paragraph name to trace (bypasses dropdown)
    */
-  async function traceFromEntry() {
+  async function traceFromEntry(overrideEntry) {
     const entrySelect = document.getElementById('traceEntrySelect');
-    const entry = entrySelect?.value;
+    const entry = overrideEntry || entrySelect?.value;
     if (!entry) return;
+
+    // Sync dropdown
+    if (entrySelect && !overrideEntry) {
+      // Normal flow from dropdown
+    } else if (entrySelect) {
+      entrySelect.value = entry;
+    }
+
+    // Check cache first
+    if (traceCache[entry]) {
+      highlightTraceGroup(entry);
+      return;
+    }
 
     const fileSelect = document.getElementById('analysisFileSelect');
     const source = await fetchSource(fileSelect.value);
@@ -159,14 +175,85 @@ const Analysis = (() => {
         max_steps: 100,
       });
 
-      renderExecPath(data.execution_path || []);
+      const path = data.execution_path || [];
+      traceCache[entry] = path;
+      appendTraceGroup(entry, path);
+      highlightTraceGroup(entry);
     } catch (e) {
-      Utils.showToast(`Trace failed: ${e.message}`, 'error');
+      Utils.showToast(`Trace failed: ${e.message}`, 'danger');
     }
   }
 
   /**
-   * Render the execution path as a visual chain of steps.
+   * Append a collapsible trace group to the execution path container.
+   */
+  function appendTraceGroup(entry, path) {
+    const container = document.getElementById('execPathContainer');
+    if (!container) return;
+
+    // Remove the placeholder text if present
+    const placeholder = container.querySelector('span[style]');
+    if (placeholder) placeholder.remove();
+
+    const group = document.createElement('div');
+    group.className = 'exec-path__group';
+    group.dataset.entry = entry;
+
+    const header = document.createElement('div');
+    header.className = 'exec-path__group-header';
+    header.textContent = `\u25B6 ${entry} (${path.length} steps)`;
+    header.addEventListener('click', () => {
+      body.classList.toggle('exec-path__group-body--open');
+      highlightTraceGroup(entry);
+      CallGraphView.setSelectedNode(entry);
+    });
+    group.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'exec-path__group-body';
+
+    if (path.length === 0) {
+      body.innerHTML = '<span style="color: var(--text-muted); font-size: var(--text-xs);">No execution path</span>';
+    } else {
+      path.forEach((step, i) => {
+        if (i > 0) {
+          const arrow = document.createElement('span');
+          const via = step.via || 'sequential';
+          arrow.className = `exec-path__arrow exec-path__arrow--${via}`;
+          arrow.textContent = via === 'GOTO' ? '\u2192\u2192' : via === 'ALTER\u2192GOTO' ? '\u21D2' : '\u2192';
+          arrow.title = via;
+          body.appendChild(arrow);
+        }
+        const stepEl = document.createElement('span');
+        stepEl.className = 'exec-path__step';
+        stepEl.textContent = step.paragraph;
+        if (step.note) stepEl.title = step.note;
+        body.appendChild(stepEl);
+      });
+    }
+
+    group.appendChild(body);
+    container.appendChild(group);
+  }
+
+  /**
+   * Highlight the trace group for the given entry point.
+   */
+  function highlightTraceGroup(entry) {
+    const container = document.getElementById('execPathContainer');
+    if (!container) return;
+
+    container.querySelectorAll('.exec-path__group').forEach(g => {
+      g.classList.remove('exec-path__group--active');
+      if (g.dataset.entry === entry) {
+        g.classList.add('exec-path__group--active');
+        g.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  }
+
+  /**
+   * Render the execution path as a visual chain of steps (legacy single-trace).
    */
   function renderExecPath(path) {
     const container = document.getElementById('execPathContainer');
@@ -184,7 +271,7 @@ const Analysis = (() => {
         const arrow = document.createElement('span');
         const via = step.via || 'sequential';
         arrow.className = `exec-path__arrow exec-path__arrow--${via}`;
-        arrow.textContent = via === 'GOTO' ? '→→' : via === 'ALTER→GOTO' ? '⇒' : '→';
+        arrow.textContent = via === 'GOTO' ? '\u2192\u2192' : via === 'ALTER\u2192GOTO' ? '\u21D2' : '\u2192';
         arrow.title = via;
         container.appendChild(arrow);
       }
@@ -204,7 +291,7 @@ const Analysis = (() => {
     const sourceA = await fetchSource('PAYROLL.cob');
     const sourceB = await fetchSource('TRANSACT.cob');
     if (!sourceA || !sourceB) {
-      Utils.showToast('Could not load files for comparison', 'error');
+      Utils.showToast('Could not load files for comparison', 'danger');
       return;
     }
 
@@ -224,7 +311,7 @@ const Analysis = (() => {
       document.getElementById('analysisGrid').style.display = 'none';
       document.getElementById('compareCard').style.display = '';
     } catch (e) {
-      Utils.showToast(`Compare failed: ${e.message}`, 'error');
+      Utils.showToast(`Compare failed: ${e.message}`, 'danger');
     }
   }
 
@@ -239,10 +326,23 @@ const Analysis = (() => {
     document.getElementById('btnAnalyze')?.addEventListener('click', analyzeFile);
     document.getElementById('btnCompare')?.addEventListener('click', runCompare);
     document.getElementById('btnCrossFile')?.addEventListener('click', runCrossFile);
-    document.getElementById('traceEntrySelect')?.addEventListener('change', traceFromEntry);
+    document.getElementById('traceEntrySelect')?.addEventListener('change', () => traceFromEntry());
     document.getElementById('btnCloseCompare')?.addEventListener('click', () => {
       document.getElementById('compareCard').style.display = 'none';
       document.getElementById('analysisGrid').style.display = '';
+    });
+    document.getElementById('btnCloseCrossFile')?.addEventListener('click', () => {
+      document.getElementById('crossFileCard').style.display = 'none';
+      document.getElementById('analysisGrid').style.display = '';
+    });
+
+    // Click-to-trace: listen for cg-node-click events on the call graph container
+    document.getElementById('callGraphContainer')?.addEventListener('cg-node-click', (e) => {
+      const paragraph = e.detail?.paragraph;
+      if (paragraph) {
+        traceFromEntry(paragraph);
+        CallGraphView.setSelectedNode(paragraph);
+      }
     });
   }
 
@@ -260,7 +360,7 @@ const Analysis = (() => {
     }
 
     if (Object.keys(sources).length < 2) {
-      Utils.showToast('Need at least 2 files for cross-file analysis', 'error');
+      Utils.showToast('Need at least 2 files for cross-file analysis', 'danger');
       return;
     }
 
@@ -270,13 +370,52 @@ const Analysis = (() => {
         `Cross-file: ${data.total_paragraphs} paragraphs, ${data.cross_edges.length} inter-file edges, total complexity ${data.total_complexity}`,
         'success'
       );
-      // Render cross-file edges in call graph if available
-      if (typeof CallGraphView !== 'undefined' && CallGraphView.renderCrossFile) {
-        CallGraphView.renderCrossFile(data);
-      }
+
+      // Show cross-file card, hide analysis grid + compare
+      document.getElementById('analysisGrid').style.display = 'none';
+      document.getElementById('compareCard').style.display = 'none';
+      document.getElementById('crossFileCard').style.display = '';
+
+      // Render cross-file graph
+      CallGraphView.renderCrossFile(data);
+
+      // Render cross-file summary table
+      renderCrossFileSummary(data);
     } catch (e) {
-      Utils.showToast(`Cross-file analysis failed: ${e.message}`, 'error');
+      Utils.showToast(`Cross-file analysis failed: ${e.message}`, 'danger');
     }
+  }
+
+  /**
+   * Render a summary table for cross-file analysis results.
+   */
+  function renderCrossFileSummary(data) {
+    const container = document.getElementById('crossFileSummary');
+    if (!container) return;
+
+    const files = data.files || {};
+    let html = `<table class="cross-file-summary">
+      <thead><tr><th>File</th><th>Paragraphs</th><th>Complexity</th><th>Rating</th></tr></thead>
+      <tbody>`;
+
+    Object.entries(files).forEach(([filename, info]) => {
+      const score = info.complexity_score || 0;
+      const rating = info.complexity_rating || (score >= 100 ? 'spaghetti' : score >= 50 ? 'moderate' : 'clean');
+      const ratingClass = rating === 'spaghetti' ? 'spaghetti' : rating === 'moderate' ? 'moderate' : 'clean';
+      html += `<tr>
+        <td>${Utils.escapeHtml(filename)}</td>
+        <td>${(info.paragraphs || []).length}</td>
+        <td><span class="complexity-score complexity-score--${ratingClass}">${score}</span></td>
+        <td>${rating}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table>
+      <div style="margin-top: var(--sp-2); font-size: var(--text-xs); color: var(--text-muted);">
+        Total: ${data.total_paragraphs} paragraphs, ${data.cross_edges?.length || 0} inter-file edges, combined complexity ${data.total_complexity}
+      </div>`;
+
+    container.innerHTML = html;
   }
 
   return { init };

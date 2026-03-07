@@ -221,3 +221,56 @@ class TestChatHistory:
         messages = resp.json()
         assert len(messages) >= 2  # user + assistant (system filtered out)
         assert all(m["role"] != "system" for m in messages)
+
+
+# ── Chat Error Paths ─────────────────────────────────────────────
+# Tests for 502 conversation errors, provider switch edge cases.
+
+class TestChatErrorPaths:
+
+    def test_chat_conversation_exception_returns_502(self, client):
+        """Unexpected exception in conversation.chat() returns 502."""
+        mock_provider = MagicMock()
+        mock_provider.check_available = AsyncMock(return_value=True)
+        mock_provider.model = "test"
+        mock_provider.security_level = "LOCAL"
+        mock_provider.chat = AsyncMock(side_effect=RuntimeError("LLM exploded"))
+        routes_chat._current_provider = mock_provider
+
+        resp = client.post("/api/chat", headers=ADMIN_HEADERS, json={"message": "Boom"})
+        assert resp.status_code == 502
+
+    def test_switch_to_anthropic_with_api_key(self, client):
+        """Switching to Anthropic with inline API key succeeds."""
+        with patch("python.llm.providers.AnthropicProvider.check_available",
+                    new_callable=AsyncMock, return_value=True):
+            resp = client.post("/api/provider/switch", json={
+                "provider": "anthropic",
+                "api_key": "sk-test-key-12345",
+            })
+            assert resp.status_code == 200
+            assert resp.json()["provider"] == "anthropic"
+
+    def test_switch_to_invalid_provider(self, client):
+        """Switching to invalid provider name returns 422 (regex validation)."""
+        resp = client.post("/api/provider/switch", json={
+            "provider": "openai",
+        })
+        assert resp.status_code == 422
+
+    def test_chat_with_empty_session_id(self, client):
+        """Empty string session_id creates a new session (not an error)."""
+        mock_provider = MagicMock()
+        mock_provider.check_available = AsyncMock(return_value=True)
+        mock_provider.model = "test"
+        mock_provider.security_level = "LOCAL"
+        mock_provider.chat = AsyncMock(return_value=ProviderResponse(
+            content="New session", provider="test", model="test"
+        ))
+        routes_chat._current_provider = mock_provider
+
+        resp = client.post("/api/chat", headers=ADMIN_HEADERS, json={
+            "message": "Hello", "session_id": "",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["session_id"] != ""

@@ -33,6 +33,9 @@ Dependencies:
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()  # Load .env before any os.environ reads
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -60,7 +63,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="COBOL Legacy Ledger API",
         description="REST API for the inter-bank settlement system — wraps COBOL banking, integrity chains, and LLM tool-use",
-        version="6.0.0",
+        version="6.1.0",
     )
 
     # ── Middleware ─────────────────────────────────────────────────

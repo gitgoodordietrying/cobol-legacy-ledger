@@ -39,6 +39,7 @@ Dependencies:
 
 import asyncio
 import json
+import logging
 import threading
 from typing import Optional, List
 
@@ -57,12 +58,14 @@ from python.cross_verify import tamper_balance
 
 
 router = APIRouter(prefix="/api", tags=["simulation"])
+logger = logging.getLogger(__name__)
 
 # ── Module State ─────────────────────────────────────────────────
 # Singleton simulation engine + thread. Only one simulation can run at a time.
 _engine: Optional[SimulationEngine] = None
 _thread: Optional[threading.Thread] = None
 _event_queues: list = []  # Active SSE subscriber queues
+_event_queues_lock = threading.Lock()  # Guards all _event_queues mutations
 
 
 def _get_engine() -> Optional[SimulationEngine]:
@@ -90,14 +93,15 @@ def start_simulation(req: SimulationStartRequest, auth: AuthContext = Depends(ge
 
     # Register SSE broadcast callback
     def broadcast(event: dict):
-        dead = []
-        for q in _event_queues:
-            try:
-                q.put_nowait(event)
-            except Exception:
-                dead.append(q)
-        for q in dead:
-            _event_queues.remove(q)
+        with _event_queues_lock:
+            dead = []
+            for q in _event_queues:
+                try:
+                    q.put_nowait(event)
+                except Exception:
+                    dead.append(q)
+            for q in dead:
+                _event_queues.remove(q)
 
     _engine.register_callback(broadcast)
 
@@ -124,11 +128,12 @@ def start_simulation(req: SimulationStartRequest, auth: AuthContext = Depends(ge
                 'description': f"Simulation engine error: {exc}",
                 'day': _engine.days_run if _engine else 0,
             }
-            for q in _event_queues:
-                try:
-                    q.put_nowait(error_event)
-                except Exception:
-                    pass
+            with _event_queues_lock:
+                for q in _event_queues:
+                    try:
+                        q.put_nowait(error_event)
+                    except Exception:
+                        pass
 
     _thread = threading.Thread(target=run_engine, daemon=True)
     _thread.start()
@@ -249,7 +254,8 @@ async def simulation_events(
     import queue
 
     q = queue.Queue(maxsize=2000)
-    _event_queues.append(q)
+    with _event_queues_lock:
+        _event_queues.append(q)
 
     async def event_generator():
         try:
@@ -277,8 +283,9 @@ async def simulation_events(
         except asyncio.CancelledError:
             pass
         finally:
-            if q in _event_queues:
-                _event_queues.remove(q)
+            with _event_queues_lock:
+                if q in _event_queues:
+                    _event_queues.remove(q)
 
     return StreamingResponse(
         event_generator(),
@@ -306,11 +313,12 @@ def tamper_demo(req: TamperDemoRequest, auth: AuthContext = Depends(get_auth)):
             'description': f"Balance tampered: {req.node}/{req.account_id} set to ${req.amount:,.2f}",
             'params': {'node': req.node, 'account_id': req.account_id, 'amount': req.amount},
         }
-        for q in _event_queues:
-            try:
-                q.put_nowait(event)
-            except Exception:
-                pass
+        with _event_queues_lock:
+            for q in _event_queues:
+                try:
+                    q.put_nowait(event)
+                except Exception:
+                    pass
 
         return TamperDemoResponse(
             tampered=True,
@@ -356,5 +364,6 @@ def list_transactions(
             )
             for row in cursor.fetchall()
         ]
-    except Exception:
-        return []
+    except Exception as exc:
+        logger.error("Failed to list transactions for %s: %s", node, exc)
+        raise HTTPException(status_code=500, detail=f"Database error for {node}")

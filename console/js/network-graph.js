@@ -76,6 +76,28 @@ const NetworkGraph = (() => {
       filter.appendChild(merge);
       defs.appendChild(filter);
     });
+
+    // Health glow filters (green = valid, red = broken)
+    const glowValid = svgEl('filter', { id: 'glow-health-valid', x: '-50%', y: '-50%', width: '200%', height: '200%' });
+    const blurValid = svgEl('feGaussianBlur', { stdDeviation: '7', result: 'glow' });
+    const floodValid = svgEl('feFlood', { 'flood-color': '#22c55e', 'flood-opacity': '0.6', result: 'color' });
+    const compValid = svgEl('feComposite', { in: 'color', in2: 'glow', operator: 'in', result: 'colorGlow' });
+    const mergeValid = svgEl('feMerge');
+    mergeValid.appendChild(svgEl('feMergeNode', { in: 'colorGlow' }));
+    mergeValid.appendChild(svgEl('feMergeNode', { in: 'SourceGraphic' }));
+    glowValid.append(blurValid, floodValid, compValid, mergeValid);
+    defs.appendChild(glowValid);
+
+    const glowBroken = svgEl('filter', { id: 'glow-health-broken', x: '-50%', y: '-50%', width: '200%', height: '200%' });
+    const blurBroken = svgEl('feGaussianBlur', { stdDeviation: '7', result: 'glow' });
+    const floodBroken = svgEl('feFlood', { 'flood-color': '#ef4444', 'flood-opacity': '0.6', result: 'color' });
+    const compBroken = svgEl('feComposite', { in: 'color', in2: 'glow', operator: 'in', result: 'colorGlow' });
+    const mergeBroken = svgEl('feMerge');
+    mergeBroken.appendChild(svgEl('feMergeNode', { in: 'colorGlow' }));
+    mergeBroken.appendChild(svgEl('feMergeNode', { in: 'SourceGraphic' }));
+    glowBroken.append(blurBroken, floodBroken, compBroken, mergeBroken);
+    defs.appendChild(glowBroken);
+
     svg.appendChild(defs);
 
     // Spoke lines (banks to hub)
@@ -106,21 +128,13 @@ const NetworkGraph = (() => {
       const nodeR = node === 'CLEARING' ? 46 : 38;
       const glowR = node === 'CLEARING' ? 42 : 34;
 
-      // Health ring (wider, semi-transparent — acts as glow behind outer ring)
-      const healthRing = svgEl('circle', {
-        cx: pos.x, cy: pos.y, r: nodeR + 3,
-        stroke: 'transparent', 'stroke-width': 4,
-        fill: 'none', opacity: 0.6,
-        class: 'node-health-ring',
-      });
-      healthRings[node] = healthRing;
-
-      // Outer ring
+      // Outer ring (unified identity + health indicator)
       const ring = svgEl('circle', {
         cx: pos.x, cy: pos.y, r: nodeR,
-        fill: 'none', stroke: color, 'stroke-width': 2.5,
+        fill: 'none', stroke: color, 'stroke-width': 3.5,
         class: 'node-ring', opacity: 0.8,
       });
+      healthRings[node] = { ring, defaultColor: color };
 
       // Inner glow
       const glow = svgEl('circle', {
@@ -141,7 +155,6 @@ const NetworkGraph = (() => {
       });
       sublabel.textContent = SUBLABELS[node];
 
-      g.appendChild(healthRing);
       g.appendChild(glow);
       g.appendChild(ring);
       g.appendChild(label);
@@ -239,20 +252,39 @@ const NetworkGraph = (() => {
    * @param {boolean} isValid - true = green, false = red
    */
   function setNodeHealth(node, isValid) {
-    const ring = healthRings[node];
-    if (ring) {
-      ring.setAttribute('stroke', isValid ? '#22c55e' : '#ef4444');
-    }
+    const entry = healthRings[node];
+    if (!entry) return;
+    const { ring } = entry;
+    ring.setAttribute('stroke', isValid ? '#22c55e' : '#ef4444');
+    ring.classList.remove('node-ring--valid', 'node-ring--broken');
+    ring.classList.add(isValid ? 'node-ring--valid' : 'node-ring--broken');
   }
 
   /**
-   * Reset all health rings to transparent (neutral state).
+   * Reset all health rings to their default bank color (neutral state).
    */
   function resetHealthRings() {
-    Object.values(healthRings).forEach(ring => {
-      ring.setAttribute('stroke', 'transparent');
+    Object.values(healthRings).forEach(({ ring, defaultColor }) => {
+      ring.setAttribute('stroke', defaultColor);
+      ring.classList.remove('node-ring--valid', 'node-ring--broken');
     });
   }
 
-  return { init, animateTransaction, refreshNodeData, setNodeHealth, resetHealthRings };
+  /**
+   * Pulse all 6 health rings simultaneously (used during Integrity Check).
+   * Applies the CSS pulse animation, removed after a duration.
+   * @param {number} durationMs - how long to pulse (default 2000ms)
+   */
+  function pulseAllRings(durationMs = 2000) {
+    Object.values(healthRings).forEach(({ ring }) => {
+      ring.classList.add('node-ring--checking');
+    });
+    setTimeout(() => {
+      Object.values(healthRings).forEach(({ ring }) => {
+        ring.classList.remove('node-ring--checking');
+      });
+    }, durationMs);
+  }
+
+  return { init, animateTransaction, refreshNodeData, setNodeHealth, resetHealthRings, pulseAllRings };
 })();

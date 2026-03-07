@@ -888,7 +888,14 @@ class COBOLBridge:
         # result with integrity chain recording and SQLite sync.
         if self.cobol_available:
             result = self.process_transaction_via_cobol(tx_type, account_id, amount, description, target_id)
-            if result["status"] == "00":
+            if result["status"] == "99":
+                # Mode A returned unknown error — fall back to Mode B
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Mode A returned status 99 for %s on %s, falling back to Mode B",
+                    tx_type, account_id,
+                )
+            elif result["status"] == "00":
                 # Record in integrity chain (Python layer wraps COBOL)
                 ts_now = datetime.now().isoformat()
                 tx_id = result.get("tx_id", "")
@@ -917,7 +924,9 @@ class COBOLBridge:
                             (new_balance, account_id.strip())
                         )
                     self.db.commit()
-            return result
+                return result
+            else:
+                return result
 
         # ── Mode B: Python-Only Validation ────────────────────────
         # Implements the same business rules as COBOL's VALIDATE.cob

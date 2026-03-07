@@ -30,6 +30,7 @@ Dependencies:
     python.integrity (for SHA-256 chain recording)
 """
 
+import logging
 import sqlite3
 import subprocess
 import os
@@ -38,6 +39,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from .integrity import IntegrityChain
+
+logger = logging.getLogger(__name__)
 
 
 # ── Employee Record Layout ─────────────────────────────────────
@@ -158,6 +161,22 @@ class PayrollBridge:
 
     # ── Employee Record Parsing ────────────────────────────────
 
+    @staticmethod
+    def _safe_int(value: str, default: int, field: str, emp_id: str) -> int:
+        """Parse an integer from a DAT field, returning default on failure.
+
+        Logs a warning when a field contains non-numeric data so malformed
+        records are visible without crashing the payroll endpoint.
+        """
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            logger.warning(
+                "Non-numeric %s field for %s: %r — using default %d",
+                field, emp_id, value, default,
+            )
+            return default
+
     def _parse_employee_record(self, line: str) -> Dict[str, Any]:
         """Parse a fixed-width employee record from EMPLOYEES.DAT.
 
@@ -171,29 +190,31 @@ class PayrollBridge:
             raw = line[start:end] if end <= len(line) else ""
             fields[field_name] = raw.strip()
 
-        # Convert numeric fields
+        # Convert numeric fields — _safe_int guards against malformed DAT data
+        emp_id = fields.get("emp_id", "???")
+
         salary_raw = fields["salary"]
         if salary_raw:
             # S9(7)V99: 9 digits, last 2 are cents (implied decimal)
-            fields["salary"] = int(salary_raw) / 100.0
+            fields["salary"] = self._safe_int(salary_raw, 0, "salary", emp_id) / 100.0
         else:
             fields["salary"] = 0.0
 
         hourly_raw = fields["hourly_rate"]
         if hourly_raw:
             # S9(3)V99: 5 digits, last 2 are cents
-            fields["hourly_rate"] = int(hourly_raw) / 100.0
+            fields["hourly_rate"] = self._safe_int(hourly_raw, 0, "hourly_rate", emp_id) / 100.0
         else:
             fields["hourly_rate"] = 0.0
 
-        fields["hours_worked"] = int(fields["hours_worked"]) if fields["hours_worked"] else 0
-        fields["pay_periods"] = int(fields["pay_periods"]) if fields["pay_periods"] else 26
-        fields["tax_bracket"] = int(fields["tax_bracket"]) if fields["tax_bracket"] else 1
+        fields["hours_worked"] = self._safe_int(fields["hours_worked"], 0, "hours_worked", emp_id) if fields["hours_worked"] else 0
+        fields["pay_periods"] = self._safe_int(fields["pay_periods"], 26, "pay_periods", emp_id) if fields["pay_periods"] else 26
+        fields["tax_bracket"] = self._safe_int(fields["tax_bracket"], 1, "tax_bracket", emp_id) if fields["tax_bracket"] else 1
 
         # 401k: 9V99 = 3 digits, first is integer, last 2 are decimal
         k401_raw = fields["k401_pct"]
         if k401_raw:
-            fields["k401_pct"] = int(k401_raw) / 100.0
+            fields["k401_pct"] = self._safe_int(k401_raw, 0, "k401_pct", emp_id) / 100.0
         else:
             fields["k401_pct"] = 0.0
 

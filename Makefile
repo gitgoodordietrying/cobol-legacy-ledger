@@ -9,7 +9,7 @@
 # Developer workflow:
 #   make build        # Compile COBOL (optional — Mode B fallback)
 #   make seed         # Seed all 6 nodes with demo data
-#   make test         # Run all 668+ unit tests
+#   make test         # Run all 726+ unit tests
 #   make run          # Start the FastAPI server
 #   make prove        # Full end-to-end proof (compile → seed → settle → verify → tamper → detect)
 #
@@ -33,7 +33,7 @@ build: ## Compile all COBOL programs (requires cobc or Docker)
 seed: ## Seed all 6 nodes with demo account data
 	@$(SCRIPTS)/seed.sh
 
-test: ## Run all unit tests (668+)
+test: ## Run all unit tests (726+)
 	@$(PYTHON) -m pytest python/tests/ -v --ignore=python/tests/test_e2e_playwright.py -p no:asyncio
 
 test-e2e: ## Run end-to-end Playwright tests (requires running server)
@@ -56,7 +56,7 @@ clean: ## Remove compiled binaries and __pycache__
 install: ## Create venv and install Python dependencies
 	@$(PYTHON) -m venv $(VENV) 2>/dev/null || true
 	@$(VENV)/bin/pip install --quiet --upgrade pip
-	@$(VENV)/bin/pip install --quiet -r requirements.txt
+	@$(VENV)/bin/pip install --quiet -r python/requirements.txt
 	@echo "Dependencies installed in $(VENV)/"
 
 lab-setup: install ## Classroom setup: venv + deps + seed + smoke test

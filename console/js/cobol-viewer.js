@@ -12,6 +12,8 @@ const CobolViewer = (() => {
   const fileCache = {};
   let currentFile = 'SMOKETEST.cob';
   let currentParagraph = null;
+  let tickerCount = 0;
+  const MAX_LOG_ENTRIES = 50;
 
   // Map transaction type → file + paragraph for auto-navigation
   const TX_MAP = {
@@ -116,7 +118,8 @@ const CobolViewer = (() => {
   }
 
   /**
-   * Show a paragraph snippet in the ticker (compact, just the active paragraph).
+   * Show a paragraph snippet in the ticker as a terminal log entry.
+   * Prepends (newest first), capping at MAX_LOG_ENTRIES.
    */
   async function showSnippet(filename, paragraphName) {
     const sourceEl = document.getElementById('cobolSource');
@@ -130,28 +133,69 @@ const CobolViewer = (() => {
 
     if (fileEl) fileEl.textContent = filename;
     if (paraEl) paraEl.textContent = paragraphName || '\u2014';
-    if (badgeEl) badgeEl.textContent = filename.replace('.cob', '');
+    tickerCount++;
+    if (badgeEl) badgeEl.textContent = `${tickerCount}`;
 
     try {
       const source = await fetchFile(filename);
       const lines = source.split('\n');
       const range = findParagraph(lines, paragraphName);
 
+      // Build a log entry div
+      const entry = document.createElement('div');
+      entry.className = 'cobol-ticker__entry';
+
+      const header = document.createElement('div');
+      header.className = 'cobol-ticker__entry-header';
+      header.textContent = `[D${tickerCount}] ${filename} \u2192 ${paragraphName || '???'}`;
+      entry.appendChild(header);
+
+      const code = document.createElement('div');
+      code.className = 'cobol-ticker__entry-code';
+
       if (range) {
-        const snippet = lines.slice(range.start, range.end);
-        const html = snippet.map(line => {
-          const highlighted = highlightLine(line);
-          return `<span class="cobol-highlight">${highlighted}</span>`;
-        }).join('\n');
-        sourceEl.innerHTML = html;
+        // Show first 8 lines of paragraph for compactness
+        const snippet = lines.slice(range.start, Math.min(range.end, range.start + 8));
+        code.innerHTML = snippet.map(highlightLine).join('\n');
       } else {
-        // No paragraph found — show first 30 lines as context
-        const preview = lines.slice(0, 30);
-        sourceEl.innerHTML = preview.map(highlightLine).join('\n');
+        const preview = lines.slice(0, 8);
+        code.innerHTML = preview.map(highlightLine).join('\n');
+      }
+
+      entry.appendChild(code);
+
+      // Clear initial placeholder if present
+      if (sourceEl.querySelector('span[style]') && tickerCount === 1) {
+        sourceEl.innerHTML = '';
+      }
+
+      // Prepend newest entry
+      sourceEl.insertBefore(entry, sourceEl.firstChild);
+
+      // Cap entries
+      while (sourceEl.children.length > MAX_LOG_ENTRIES) {
+        sourceEl.removeChild(sourceEl.lastChild);
       }
     } catch {
-      sourceEl.innerHTML = `<span style="color: var(--danger)">Failed to load ${Utils.escapeHtml(filename)}</span>`;
+      // On error, still log the attempt
+      const entry = document.createElement('div');
+      entry.className = 'cobol-ticker__entry';
+      entry.innerHTML = `<div class="cobol-ticker__entry-header" style="color: var(--danger)">[D${tickerCount}] Failed to load ${Utils.escapeHtml(filename)}</div>`;
+      sourceEl.insertBefore(entry, sourceEl.firstChild);
     }
+  }
+
+  /**
+   * Clear all log entries and reset the ticker counter.
+   */
+  function clearLog() {
+    const sourceEl = document.getElementById('cobolSource');
+    if (sourceEl) {
+      sourceEl.innerHTML = '<span style="color: var(--text-muted)">Start a simulation to see live COBOL execution</span>';
+    }
+    tickerCount = 0;
+    const badgeEl = document.getElementById('cobolProgramBadge');
+    if (badgeEl) badgeEl.textContent = '\u2014';
   }
 
   /**
@@ -257,5 +301,5 @@ const CobolViewer = (() => {
     }
   }
 
-  return { init, highlightForEvent, showSnippet };
+  return { init, highlightForEvent, showSnippet, clearLog };
 })();

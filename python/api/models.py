@@ -221,7 +221,7 @@ class ChatResponse(BaseModel):
     session_id: str                # Session ID (for continuing the conversation)
     tool_calls: List[ToolCallInfo] = Field(default_factory=list)  # Tools invoked during this turn
     provider: str                  # Provider used (ollama or anthropic)
-    model: str                     # Model used (llama3.1, claude-sonnet-4-20250514, etc.)
+    model: str                     # Model used (llama3.1, claude-sonnet-4-20250514, etc)
 
 
 class ProviderStatus(BaseModel):
@@ -237,6 +237,7 @@ class ProviderSwitchRequest(BaseModel):
     """Request body for POST /api/provider/switch."""
     provider: str = Field(..., pattern=r"^(ollama|anthropic)$")  # Target provider
     model: Optional[str] = None    # Optional model override
+    api_key: Optional[str] = None  # Optional API key (Anthropic only, in-memory)
 
 
 # ── Health Models ──────────────────────────────────────────────────

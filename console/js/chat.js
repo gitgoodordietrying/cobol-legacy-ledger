@@ -9,7 +9,20 @@
 const Chat = (() => {
 
   let currentSessionId = null;
+  let _sending = false;  // Guard against concurrent message submissions
   const sessions = [];  // { id, preview }
+
+  const PROMPT_CHIPS = [
+    'List all accounts in BANK_A',
+    'Explain what PAYROLL.cob does',
+    'What is a nostro account?',
+    'Compare PAYROLL.cob vs TRANSACT.cob',
+    'Verify all chains',
+    'What is PERFORM THRU?',
+  ];
+
+  let _ollamaModels = [];  // Populated dynamically from /api/chat/models
+  const ANTHROPIC_MODELS = ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'claude-opus-4-20250514'];
 
   /**
    * Initialize chat bindings.
@@ -37,8 +50,17 @@ const Chat = (() => {
     document.getElementById('btnOllama')?.addEventListener('click', () => switchProvider('ollama'));
     document.getElementById('btnAnthropic')?.addEventListener('click', () => switchProvider('anthropic'));
 
+    // Model dropdown — switch provider when model changes
+    document.getElementById('modelSelect')?.addEventListener('change', () => {
+      const provider = document.getElementById('providerName')?.textContent?.split('/')[0] || 'ollama';
+      switchProvider(provider);
+    });
+
     // New chat
     document.getElementById('btnNewChat')?.addEventListener('click', newChat);
+
+    // Prompt chips
+    wireChips();
 
     // Load provider status
     refreshProviderStatus();
@@ -55,9 +77,15 @@ const Chat = (() => {
    * Send the current message.
    */
   async function sendMessage() {
+    if (_sending) return;
+
     const textarea = document.getElementById('chatInput');
     const message = textarea?.value?.trim();
     if (!message) return;
+
+    _sending = true;
+    const sendBtn = document.getElementById('btnSend');
+    if (sendBtn) sendBtn.disabled = true;
 
     // Clear input
     textarea.value = '';
@@ -77,8 +105,6 @@ const Chat = (() => {
 
       const resp = await ApiClient.post('/api/chat', body);
 
-      showTyping(false);
-
       // Track session
       currentSessionId = resp.session_id;
       trackSession(currentSessionId, message);
@@ -92,9 +118,12 @@ const Chat = (() => {
       appendMessage('assistant', resp.response, resp.provider + '/' + resp.model);
 
     } catch (err) {
-      showTyping(false);
       appendMessage('assistant', `Error: ${err.message}`);
       Utils.showToast(err.message, 'danger');
+    } finally {
+      showTyping(false);
+      _sending = false;
+      if (sendBtn) sendBtn.disabled = false;
     }
   }
 
@@ -255,15 +284,18 @@ const Chat = (() => {
     currentSessionId = null;
     const container = document.getElementById('chatMessages');
     if (container) {
+      const chipsHtml = PROMPT_CHIPS.map(p =>
+        `<button class="chat-chip" data-prompt="${Utils.escapeHtml(p)}">${Utils.escapeHtml(p)}</button>`
+      ).join('');
       container.innerHTML = `
         <div class="chat-empty">
           <div class="chat-empty__icon">&#9001;/&#9002;</div>
           <span>Send a message to begin</span>
-          <span style="font-size: var(--text-xs); color: var(--text-muted);">
-            Try: "List all accounts in BANK_A" or "What is a nostro account?"
-          </span>
+          <div class="chat-chips">${chipsHtml}</div>
         </div>
       `;
+      // Re-wire chips
+      wireChips();
     }
     renderSessions();
   }
@@ -273,12 +305,55 @@ const Chat = (() => {
    */
   async function switchProvider(provider) {
     try {
-      await ApiClient.post('/api/provider/switch', { provider });
+      const body = { provider };
+      const modelSelect = document.getElementById('modelSelect');
+      const apiKeyInput = document.getElementById('apiKeyInput');
+
+      if (modelSelect?.value) body.model = modelSelect.value;
+      if (apiKeyInput?.value && provider === 'anthropic') {
+        body.api_key = apiKeyInput.value;
+      }
+
+      await ApiClient.post('/api/provider/switch', body);
       Utils.showToast(`Switched to ${provider}`, 'success');
       refreshProviderStatus();
+      updateModelOptions(provider);
     } catch (err) {
       Utils.showToast(err.message, 'danger');
     }
+  }
+
+  /**
+   * Update model dropdown options based on current provider.
+   */
+  function updateModelOptions(provider) {
+    const select = document.getElementById('modelSelect');
+    if (!select) return;
+    const models = provider === 'anthropic' ? ANTHROPIC_MODELS : _ollamaModels;
+    select.innerHTML = '';
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      select.appendChild(opt);
+    });
+  }
+
+  /**
+   * Wire prompt chip buttons to send messages.
+   */
+  function wireChips() {
+    document.querySelectorAll('.chat-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const prompt = chip.dataset.prompt;
+        if (!prompt) return;
+        const textarea = document.getElementById('chatInput');
+        if (textarea) {
+          textarea.value = prompt;
+        }
+        sendMessage();
+      });
+    });
   }
 
   /**
@@ -293,6 +368,17 @@ const Chat = (() => {
       if (dotEl) {
         dotEl.classList.remove('health-dot--ok', 'health-dot--error');
         dotEl.classList.add(status.available ? 'health-dot--ok' : 'health-dot--error');
+      }
+      // Fetch dynamic Ollama model list
+      try {
+        const models = await ApiClient.get('/api/chat/models');
+        if (Array.isArray(models) && models.length) _ollamaModels = models;
+      } catch { /* models endpoint unavailable */ }
+      // Update model dropdown to match current provider
+      updateModelOptions(status.provider);
+      const modelSelect = document.getElementById('modelSelect');
+      if (modelSelect && status.model) {
+        modelSelect.value = status.model;
       }
     } catch {
       // Provider endpoint not available (LLM deps missing)

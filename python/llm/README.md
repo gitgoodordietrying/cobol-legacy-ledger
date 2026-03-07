@@ -43,6 +43,14 @@ ConversationManager
 | `generate_cobol` | cobol.read | Generate COBOL from template |
 | `edit_cobol` | cobol.read | Edit COBOL via AST operations |
 | `validate_cobol` | cobol.read | Validate against project conventions |
+| `analyze_call_graph` | cobol.read | Build paragraph dependency graph |
+| `trace_execution` | cobol.read | Trace execution through GO TO chains |
+| `analyze_data_flow` | cobol.read | Track field read/write per paragraph |
+| `detect_dead_code` | cobol.read | Find unreachable paragraphs |
+| `analyze_cross_file` | cobol.read | Multi-file CALL/COPY dependency analysis |
+| `explain_paragraph` | cobol.read | Combined analysis for one paragraph |
+| `explain_cobol_pattern` | cobol.read | COBOL pattern/idiom knowledge base |
+| `compare_complexity` | cobol.read | Compare two COBOL files (spaghetti vs clean) |
 
 ## Provider Comparison
 
@@ -83,7 +91,7 @@ Every tool invocation is recorded in `llm_audit.db`:
 
 | Module | Purpose |
 |--------|---------|
-| `tools.py` | 12 tool definitions (Anthropic-compatible JSON Schema) |
+| `tools.py` | 20 tool definitions (Anthropic-compatible JSON Schema) |
 | `tool_executor.py` | 4-layer RBAC-gated dispatch pipeline |
 | `providers.py` | Ollama + Anthropic provider adapters |
 | `conversation.py` | Session management + tool-use resolution loop |

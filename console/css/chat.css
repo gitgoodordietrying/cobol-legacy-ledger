@@ -311,3 +311,66 @@
   font-weight: 600;
   color: var(--text-primary);
 }
+
+/* ── Prompt Chips ──────────────────────────────────────────────── */
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  justify-content: center;
+  margin-top: var(--sp-3);
+}
+
+.chat-chip {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  white-space: nowrap;
+}
+
+.chat-chip:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: var(--text-accent);
+}
+
+/* ── API Key Input ─────────────────────────────────────────────── */
+.chat-sidebar__api-key {
+  width: 100%;
+  padding: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.chat-sidebar__api-key:focus {
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.chat-sidebar__api-key::placeholder {
+  color: var(--text-muted);
+}
+
+/* ── Model Selector ────────────────────────────────────────────── */
+.chat-sidebar__model-select {
+  width: 100%;
+  padding: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}

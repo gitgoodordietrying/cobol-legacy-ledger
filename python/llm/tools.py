@@ -1,7 +1,7 @@
 """
 tools -- LLM tool definitions in Anthropic-compatible JSON Schema format.
 
-This module defines the 17 tools that an LLM can invoke during a conversation.
+This module defines the 20 tools that an LLM can invoke during a conversation.
 Each tool maps to an existing bridge, settlement, codegen, or analysis method —
 no new business logic is introduced here. The definitions are plain dicts (not classes)
 because both Ollama and Anthropic expect JSON-serializable tool schemas.
@@ -23,6 +23,9 @@ Tool groups:
     Banking tools (8): list_accounts, get_account, process_transaction,
         verify_chain, view_chain, transfer, verify_all_nodes, run_reconciliation
     Codegen tools (4): parse_cobol, generate_cobol, edit_cobol, validate_cobol
+    Analysis tools (8): analyze_call_graph, trace_execution, analyze_data_flow,
+        detect_dead_code, analyze_cross_file, explain_paragraph,
+        explain_cobol_pattern, compare_complexity
 
 Dependencies:
     python.auth (Role, PERMISSIONS)
@@ -322,6 +325,25 @@ TOOLS: List[Dict[str, Any]] = [
                 "pattern_name": {"type": "string", "description": "Pattern name (e.g., 'ALTER', 'COMP-3', 'PERFORM THRU', 'Y2K artifacts')"},
             },
             "required": ["pattern_name"],
+        },
+    },
+    {
+        "name": "compare_complexity",
+        "description": "Compare complexity metrics between two COBOL source files (spaghetti vs clean). Accepts file names (e.g., 'PAYROLL.cob', 'TRANSACT.cob') — resolves and reads files server-side. Returns per-file complexity scores, hotspot paragraphs, dead code counts, and a delta summary. Use this when asked to compare spaghetti and clean COBOL programs.",
+        "required_permission": "cobol.read",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_a": {
+                    "type": "string",
+                    "description": "First COBOL file name (e.g., 'PAYROLL.cob')",
+                },
+                "file_b": {
+                    "type": "string",
+                    "description": "Second COBOL file name (e.g., 'TRANSACT.cob')",
+                },
+            },
+            "required": ["file_a", "file_b"],
         },
     },
 ]

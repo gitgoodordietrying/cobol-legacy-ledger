@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cobol-legacy-ledger"
-version = "6.0.0"
+version = "6.1.0"
 description = "Educational COBOL banking system with Python integrity layer, REST API, LLM tool-use, legacy payroll sidecar, and static analysis pipeline"
 readme = "README.md"
 license = "MIT"
@@ -29,6 +29,7 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
     "httpx>=0.26.0",
     "pydantic>=2.5.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

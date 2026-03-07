@@ -199,7 +199,7 @@ class TestDashboardLoads:
 
     def test_event_feed_empty_initially(self, dash: Page):
         """Event feed shows empty state before simulation."""
-        feed = dash.locator("#feedList")
+        feed = dash.locator("#feedListOut")
         expect(feed).to_be_visible()
         text = feed.text_content()
         assert "Start a simulation" in text or "event" in text.lower()
@@ -794,9 +794,11 @@ class TestEventFeedColors:
             "document.querySelectorAll('.feed__item').length > 3",
             timeout=20000,
         )
-        # Check for at least one color-typed feed item
-        html = dash.locator("#feedList").inner_html()
-        has_typed = any(cls in html for cls in [
+        # Check for at least one color-typed feed item in either panel
+        html_out = dash.locator("#feedListOut").inner_html()
+        html_in = dash.locator("#feedListIn").inner_html()
+        combined = html_out + html_in
+        has_typed = any(cls in combined for cls in [
             "feed__item--deposit",
             "feed__item--withdraw",
             "feed__item--transfer",

@@ -93,3 +93,60 @@ class TestPayStubsEndpoint:
         resp = client.get("/api/payroll/stubs", headers=ADMIN_HEADERS)
         assert resp.status_code == 200
         assert resp.json()["count"] >= 23
+
+
+# ── RBAC X-Role Header Handling ─────────────────────────────────
+
+class TestPayrollRBAC:
+    """Verify that X-Role header is respected, not silently discarded."""
+
+    def test_custom_user_with_operator_role_can_read(self, client):
+        """Non-demo user with X-Role: operator gets payroll.read permission."""
+        headers = {"X-User": "custom-user", "X-Role": "operator"}
+        resp = client.get("/api/payroll/employees", headers=headers)
+        assert resp.status_code == 200
+
+    def test_custom_user_with_admin_role_can_run(self, client):
+        """Non-demo user with X-Role: admin gets payroll.process permission."""
+        headers = {"X-User": "custom-user", "X-Role": "admin"}
+        resp = client.post("/api/payroll/run?day=20260301", headers=headers)
+        assert resp.status_code == 200
+
+    def test_custom_user_without_role_defaults_to_viewer(self, client):
+        """Non-demo user with no X-Role header defaults to viewer (no payroll access)."""
+        headers = {"X-User": "custom-user"}
+        resp = client.get("/api/payroll/employees", headers=headers)
+        assert resp.status_code == 403
+
+    def test_custom_user_with_invalid_role_defaults_to_viewer(self, client):
+        """Non-demo user with invalid X-Role falls back to viewer."""
+        headers = {"X-User": "custom-user", "X-Role": "superuser"}
+        resp = client.get("/api/payroll/employees", headers=headers)
+        assert resp.status_code == 403
+
+
+# ── Payroll Error Paths ──────────────────────────────────────────
+
+class TestPayrollErrorPaths:
+
+    def test_stubs_filtered_by_emp_id(self, client):
+        """Pay stubs filtered by emp_id return only that employee's stubs."""
+        # Run payroll first
+        client.post("/api/payroll/run?day=20260301", headers=ADMIN_HEADERS)
+        resp = client.get("/api/payroll/stubs?emp_id=EMP-001", headers=ADMIN_HEADERS)
+        assert resp.status_code == 200
+        data = resp.json()
+        for stub in data["stubs"]:
+            assert stub["emp_id"] == "EMP-001"
+
+    def test_stubs_filtered_by_nonexistent_emp(self, client):
+        """Pay stubs for nonexistent employee returns empty list."""
+        client.post("/api/payroll/run?day=20260301", headers=ADMIN_HEADERS)
+        resp = client.get("/api/payroll/stubs?emp_id=EMP-999", headers=ADMIN_HEADERS)
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 0
+
+    def test_get_employee_malformed_id(self, client):
+        """Malformed employee ID returns 404."""
+        resp = client.get("/api/payroll/employees/INVALID-FORMAT", headers=ADMIN_HEADERS)
+        assert resp.status_code == 404

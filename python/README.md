@@ -14,7 +14,7 @@ The Python layer wraps the standalone COBOL banking system with three capabiliti
 | `python/api/` | `app.py`, `models.py`, `dependencies.py`, `routes_*.py` | FastAPI REST layer |
 | `python/llm/` | `tools.py`, `tool_executor.py`, `providers.py`, `conversation.py`, `audit.py` | LLM tool-use architecture |
 | `python/cobol_codegen/` | `ast_nodes.py`, `parser.py`, `generator.py`, `templates.py`, `editor.py`, `validator.py` | AST-based COBOL code generation |
-| `python/tests/` | 28 test files | 742 automated tests |
+| `python/tests/` | 28 test files | 800 automated tests |
 
 ## Quick Start
 
@@ -45,7 +45,7 @@ uvicorn python.api.app:app --reload
 ### Tests
 
 ```bash
-python -m pytest python/tests/ -v    # 742 tests, all green
+python -m pytest python/tests/ -v    # 800 tests, all green
 ```
 
 ## Architecture

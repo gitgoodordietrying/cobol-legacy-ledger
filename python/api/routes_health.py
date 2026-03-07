@@ -71,5 +71,5 @@ def health_check():
         ollama_available=ollama_available,
         anthropic_configured=anthropic_configured,
         db_status=db_status,
-        version="6.0.0",
+        version="6.1.0",
     )

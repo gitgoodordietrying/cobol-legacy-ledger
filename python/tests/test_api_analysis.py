@@ -267,3 +267,127 @@ class TestCompareEndpoint:
         data = resp.json()
         assert data["a"]["label"] == "Spaghetti"
         assert data["b"]["label"] == "Clean"
+
+
+# ── Cross-File Endpoint ──────────────────────────────────────────
+
+class TestCrossFileEndpoint:
+
+    def test_cross_file_valid(self, client):
+        """Cross-file analysis with 2+ files returns dependency graph."""
+        source_a = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CALLER.
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           CALL 'CALLEE'
+           STOP RUN.
+"""
+        source_b = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CALLEE.
+       PROCEDURE DIVISION.
+       ENTRY-PARA.
+           DISPLAY "CALLED"
+           STOP RUN.
+"""
+        resp = client.post("/api/analysis/cross-file", json={
+            "sources": {"CALLER.cob": source_a, "CALLEE.cob": source_b},
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "total_paragraphs" in data
+        assert "cross_edges" in data
+        assert "total_complexity" in data
+
+    def test_cross_file_fewer_than_two(self, client):
+        """Cross-file analysis with fewer than 2 files returns 400."""
+        resp = client.post("/api/analysis/cross-file", json={
+            "sources": {"SINGLE.cob": SIMPLE_SOURCE},
+        })
+        assert resp.status_code == 400
+
+    def test_cross_file_with_copy_dependency(self, client):
+        """Files with COPY references produce edges in result."""
+        source_a = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. MAIN-PROG.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       COPY ACCTREC.
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           STOP RUN.
+"""
+        source_b = """       IDENTIFICATION DIVISION.
+       PROGRAM-ID. HELPER.
+       PROCEDURE DIVISION.
+       HELP-PARA.
+           DISPLAY "HELP"
+           STOP RUN.
+"""
+        resp = client.post("/api/analysis/cross-file", json={
+            "sources": {"MAIN.cob": source_a, "HELPER.cob": source_b},
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_paragraphs"] >= 2
+
+
+# ── Explain Paragraph Endpoint ───────────────────────────────────
+
+class TestExplainParagraphEndpoint:
+
+    def test_explain_existing_paragraph(self, client):
+        """Existing paragraph returns complexity, connections, and fields."""
+        resp = client.post("/api/analysis/explain-paragraph", json={
+            "source_text": SIMPLE_SOURCE,
+            "paragraph_name": "MAIN-PARA",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["paragraph"] == "MAIN-PARA"
+        assert "complexity" in data
+        assert "calls_to" in data
+        assert "called_by" in data
+        assert "is_dead" in data
+        assert "fields_read" in data
+        assert "fields_written" in data
+
+    def test_explain_nonexistent_paragraph(self, client):
+        """Nonexistent paragraph returns 404."""
+        resp = client.post("/api/analysis/explain-paragraph", json={
+            "source_text": SIMPLE_SOURCE,
+            "paragraph_name": "DOES-NOT-EXIST",
+        })
+        assert resp.status_code == 404
+
+    def test_explain_paragraph_with_goto(self, client):
+        """Paragraph with GOTO edges reports connections."""
+        resp = client.post("/api/analysis/explain-paragraph", json={
+            "source_text": GOTO_SOURCE,
+            "paragraph_name": "P-000",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["calls_to"]) >= 1
+
+
+# ── Empty/Nil Input Tests ────────────────────────────────────────
+
+class TestEmptyInputs:
+
+    def test_call_graph_whitespace_source(self, client):
+        """All-whitespace source is handled gracefully."""
+        resp = client.post("/api/analysis/call-graph", json={
+            "source_text": "   \n  \t  \n  ",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["paragraph_count"] == 0
+
+    def test_complexity_empty_source(self, client):
+        """Empty source returns a clean rating."""
+        resp = client.post("/api/analysis/complexity", json={
+            "source_text": "",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_score"] == 0

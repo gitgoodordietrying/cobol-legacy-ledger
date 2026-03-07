@@ -154,18 +154,27 @@ class IntegrityChain:
         signature = hmac.new(self.secret_key, tx_hash.encode(), hashlib.sha256).hexdigest()
 
         # ── Step 5: Persist to SQLite ─────────────────────────────────
-        # Get next chain index
-        cursor = self.db.execute("SELECT MAX(chain_index) FROM chain_entries")
-        max_index = cursor.fetchone()[0]
-        chain_index = 0 if max_index is None else max_index + 1
-
-        # Insert into database
+        # Atomic INSERT with subquery — computes next chain_index in the same
+        # statement to avoid the TOCTOU race of a separate SELECT MAX + INSERT.
+        # The subquery runs inside the implicit transaction that Python's
+        # sqlite3 module manages, ensuring no concurrent writer can insert
+        # between the MAX read and the INSERT write.
         self.db.execute("""
             INSERT INTO chain_entries
-            (chain_index, tx_id, account_id, tx_type, amount, timestamp, description, status, tx_hash, prev_hash, signature)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (chain_index, tx_id, account_id, tx_type, amount, timestamp, description, status, tx_hash, prev_hash, signature))
+            (chain_index, tx_id, account_id, tx_type, amount, timestamp,
+             description, status, tx_hash, prev_hash, signature)
+            VALUES (
+                (SELECT COALESCE(MAX(chain_index), -1) + 1 FROM chain_entries),
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+        """, (tx_id, account_id, tx_type, amount, timestamp, description, status, tx_hash, prev_hash, signature))
         self.db.commit()
+
+        # Retrieve the assigned chain_index for the return value
+        cursor = self.db.execute(
+            "SELECT chain_index FROM chain_entries WHERE tx_hash = ?", (tx_hash,)
+        )
+        chain_index = cursor.fetchone()[0]
 
         return ChainedTransaction(
             chain_index=chain_index,

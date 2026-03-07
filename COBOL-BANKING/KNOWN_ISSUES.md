@@ -1,7 +1,7 @@
 # COBOL Known Issues
 
 **System**: cobol-legacy-ledger
-**Version**: 4.0.0
+**Version**: 6.1.0
 **Last Updated**: 2026-02-26
 
 All bugs are documented as-is (not fixed). This reflects authentic legacy COBOL behavior.

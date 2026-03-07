@@ -35,6 +35,7 @@ const CallGraphView = (() => {
   };
 
   let container = null;
+  let _selectedNode = null;
 
   /**
    * Create an SVG element with attributes.
@@ -108,8 +109,10 @@ const CallGraphView = (() => {
     });
     svg.appendChild(defs);
 
-    // Draw edges
-    edges.forEach(edge => {
+    // Draw edges with improved routing to avoid node overlap
+    // Track edge indices between same source-target pairs for spreading
+    const edgeIndexMap = {};
+    edges.forEach((edge, edgeIdx) => {
       const src = positions[edge.source];
       const tgt = positions[edge.target];
       if (!src || !tgt) return;
@@ -121,17 +124,56 @@ const CallGraphView = (() => {
         : edge.type === 'FALL_THROUGH' ? '2 4'
         : 'none';
 
-      // Simple curved path
+      // Track edge index for spreading overlapping edges
+      const pairKey = `${edge.source}-${edge.target}`;
+      const reversePairKey = `${edge.target}-${edge.source}`;
+      if (!edgeIndexMap[pairKey]) edgeIndexMap[pairKey] = 0;
+      const spreadIdx = edgeIndexMap[pairKey]++;
+      const spreadOffset = spreadIdx * 15;
+
+      // Improved routing
       const dx = tgt.x - src.x;
       const dy = tgt.y - src.y;
-      const mx = (src.x + tgt.x) / 2;
-      const my = (src.y + tgt.y) / 2;
-      const offset = Math.abs(dx) < 10 ? 30 : 0;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      const rowJumps = Math.round(absDy / (NODE_H + V_GAP));
+
+      let d;
+      const sy = src.y + NODE_H / 2;
+      const ty = tgt.y - NODE_H / 2;
+
+      if (absDx < 10 && absDy < NODE_H + V_GAP + 10) {
+        // Same column, adjacent row: gentle side curve
+        const side = (edgeIdx % 2 === 0 ? 1 : -1);
+        const cx = src.x + (35 + spreadOffset) * side;
+        d = `M ${src.x} ${sy} Q ${cx} ${(sy + ty) / 2} ${tgt.x} ${ty}`;
+      } else if (absDx < 10) {
+        // Same column, multi-row jump: larger side offset to avoid intermediate nodes
+        const side = (edgeIdx % 2 === 0 ? 1 : -1);
+        const cx = src.x + (50 + rowJumps * 20 + spreadOffset) * side;
+        d = `M ${src.x} ${sy} Q ${cx} ${(sy + ty) / 2} ${tgt.x} ${ty}`;
+      } else if (rowJumps > 1) {
+        // Multi-row jump with horizontal distance: cubic bezier curving around nodes
+        const mx = (src.x + tgt.x) / 2;
+        const sideSign = dx > 0 ? 1 : -1;
+        const curveOffset = (25 + rowJumps * 15 + spreadOffset) * sideSign;
+        const c1x = src.x + curveOffset;
+        const c1y = sy + (ty - sy) * 0.25;
+        const c2x = tgt.x - curveOffset * 0.5;
+        const c2y = sy + (ty - sy) * 0.75;
+        d = `M ${src.x} ${sy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tgt.x} ${ty}`;
+      } else {
+        // Adjacent or nearby: simple quadratic curve
+        const mx = (src.x + tgt.x) / 2;
+        const my = (sy + ty) / 2;
+        const offset = spreadOffset * (edgeIdx % 2 === 0 ? 1 : -1);
+        d = `M ${src.x} ${sy} Q ${mx + offset} ${my} ${tgt.x} ${ty}`;
+      }
 
       const line = svgEl('path', {
-        d: `M ${src.x} ${src.y + NODE_H / 2} Q ${mx + offset} ${my} ${tgt.x} ${tgt.y - NODE_H / 2}`,
+        d,
         stroke: color,
-        'stroke-width': edge.type === 'ALTER' ? '2' : '1.5',
+        'stroke-width': edge.type === 'ALTER' ? '1.8' : '1.2',
         'stroke-dasharray': dasharray,
         fill: 'none',
         'marker-end': `url(#arrow-${edge.type})`,
@@ -140,7 +182,7 @@ const CallGraphView = (() => {
 
       // Tooltip
       const title = svgEl('title');
-      title.textContent = `${edge.source} → ${edge.target} (${edge.type})`;
+      title.textContent = `${edge.source} \u2192 ${edge.target} (${edge.type})`;
       line.appendChild(title);
       svg.appendChild(line);
     });
@@ -148,7 +190,7 @@ const CallGraphView = (() => {
     // Draw nodes
     paragraphs.forEach(name => {
       const pos = positions[name];
-      const g = svgEl('g', { class: 'cg-node', transform: `translate(${pos.x}, ${pos.y})` });
+      const g = svgEl('g', { class: 'cg-node', 'data-paragraph': name, transform: `translate(${pos.x}, ${pos.y})` });
 
       // Determine node color
       let fillColor = 'rgba(20, 27, 55, 0.8)';
@@ -206,8 +248,22 @@ const CallGraphView = (() => {
 
       // Tooltip
       const title = svgEl('title');
-      title.textContent = `${name} — score: ${score}${deadSet.has(name) ? ' (DEAD)' : ''}`;
+      title.textContent = `${name} \u2014 score: ${score}${deadSet.has(name) ? ' (DEAD)' : ''}`;
       g.appendChild(title);
+
+      // Click handler: dispatch custom event for trace interaction
+      g.addEventListener('click', () => {
+        setSelectedNode(name);
+        g.dispatchEvent(new CustomEvent('cg-node-click', {
+          detail: { paragraph: name },
+          bubbles: true,
+        }));
+      });
+
+      // Highlight if previously selected
+      if (_selectedNode === name) {
+        g.classList.add('cg-node--selected');
+      }
 
       svg.appendChild(g);
     });
@@ -240,6 +296,141 @@ const CallGraphView = (() => {
     });
   }
 
-  return { init, render, renderLegend };
+  /**
+   * Highlight a node as selected (brighter border).
+   * @param {string} name - paragraph name to select
+   */
+  function setSelectedNode(name) {
+    _selectedNode = name;
+    if (!container) return;
+    container.querySelectorAll('.cg-node').forEach(g => {
+      g.classList.toggle('cg-node--selected', g.getAttribute('data-paragraph') === name);
+    });
+  }
+
+  /**
+   * Render a cross-file dependency graph showing files as nodes with edges.
+   * @param {Object} data - Response from POST /api/analysis/cross-file
+   */
+  function renderCrossFile(data) {
+    const cfContainer = document.getElementById('crossFileGraphContainer');
+    if (!cfContainer) return;
+    cfContainer.innerHTML = '';
+
+    const files = Object.keys(data.files || {});
+    if (files.length === 0) return;
+
+    const CF_NODE_W = 140;
+    const CF_NODE_H = 44;
+    const CF_H_GAP = 50;
+    const CF_V_GAP = 70;
+    const CF_COLS = 4;
+    const CF_PAD = 40;
+
+    const positions = {};
+    files.forEach((f, i) => {
+      const col = i % CF_COLS;
+      const row = Math.floor(i / CF_COLS);
+      positions[f] = {
+        x: CF_PAD + col * (CF_NODE_W + CF_H_GAP) + CF_NODE_W / 2,
+        y: CF_PAD + row * (CF_NODE_H + CF_V_GAP) + CF_NODE_H / 2,
+      };
+    });
+
+    const totalW = CF_PAD * 2 + Math.min(files.length, CF_COLS) * (CF_NODE_W + CF_H_GAP);
+    const totalH = CF_PAD * 2 + Math.ceil(files.length / CF_COLS) * (CF_NODE_H + CF_V_GAP);
+
+    const svg = svgEl('svg', {
+      viewBox: `0 0 ${totalW} ${totalH}`,
+      preserveAspectRatio: 'xMidYMid meet',
+      style: `width: 100%; height: ${Math.max(totalH, 250)}px;`,
+    });
+
+    // Edge colors for cross-file types
+    const CF_EDGE_COLORS = {
+      CALL_EXTERNAL: '#22c55e',
+      COPY_DEPENDENCY: '#3b82f6',
+      SHARED_COPYBOOK: '#f59e0b',
+    };
+
+    // Arrowhead markers
+    const defs = svgEl('defs');
+    Object.entries(CF_EDGE_COLORS).forEach(([type, color]) => {
+      const marker = svgEl('marker', {
+        id: `cf-arrow-${type}`, viewBox: '0 0 10 10',
+        refX: '10', refY: '5', markerWidth: '6', markerHeight: '6',
+        orient: 'auto-start-reverse',
+      });
+      marker.appendChild(svgEl('path', { d: 'M 0 0 L 10 5 L 0 10 z', fill: color }));
+      defs.appendChild(marker);
+    });
+    svg.appendChild(defs);
+
+    // Draw cross-edges
+    (data.cross_edges || []).forEach(edge => {
+      const src = positions[edge.source_file];
+      const tgt = positions[edge.target_file];
+      if (!src || !tgt) return;
+
+      const edgeType = edge.edge_type || edge.type || 'UNKNOWN';
+      const color = CF_EDGE_COLORS[edgeType] || '#64748b';
+      const mx = (src.x + tgt.x) / 2;
+      const my = (src.y + tgt.y) / 2;
+      const dx = tgt.x - src.x;
+      const offset = Math.abs(dx) < 10 ? 35 : 0;
+
+      const line = svgEl('path', {
+        d: `M ${src.x} ${src.y + CF_NODE_H / 2} Q ${mx + offset} ${my} ${tgt.x} ${tgt.y - CF_NODE_H / 2}`,
+        stroke: color, 'stroke-width': '1.5', fill: 'none',
+        'marker-end': `url(#cf-arrow-${edgeType})`,
+        class: `cg-edge cg-edge--${edgeType}`,
+      });
+      const title = svgEl('title');
+      title.textContent = `${edge.source_file} \u2192 ${edge.target_file} (${edgeType}: ${edge.source || ''})`;
+      line.appendChild(title);
+      svg.appendChild(line);
+    });
+
+    // Draw file nodes
+    files.forEach(f => {
+      const pos = positions[f];
+      const fileData = data.files[f] || {};
+      const score = fileData.complexity_score || 0;
+      const g = svgEl('g', { class: 'cg-node', transform: `translate(${pos.x}, ${pos.y})` });
+
+      let fillColor = 'rgba(20, 27, 55, 0.8)';
+      let strokeColor = 'rgba(255, 255, 255, 0.15)';
+      if (score >= 100) {
+        fillColor = 'rgba(239, 68, 68, 0.2)';
+        strokeColor = '#ef4444';
+      } else if (score >= 50) {
+        fillColor = 'rgba(245, 158, 11, 0.15)';
+        strokeColor = '#f59e0b';
+      } else if (score > 0) {
+        fillColor = 'rgba(34, 197, 94, 0.1)';
+        strokeColor = '#22c55e';
+      }
+
+      g.appendChild(svgEl('rect', {
+        x: -CF_NODE_W / 2, y: -CF_NODE_H / 2,
+        width: CF_NODE_W, height: CF_NODE_H,
+        fill: fillColor, stroke: strokeColor, rx: 6, ry: 6, 'stroke-width': 1.5,
+      }));
+
+      const label = svgEl('text', { y: '-3', class: 'cg-node__label' });
+      label.textContent = f.replace('.cob', '');
+      g.appendChild(label);
+
+      const scoreTxt = svgEl('text', { y: '12', class: 'cg-node__score' });
+      scoreTxt.textContent = `${(fileData.paragraphs || []).length}p / score ${score}`;
+      g.appendChild(scoreTxt);
+
+      svg.appendChild(g);
+    });
+
+    cfContainer.appendChild(svg);
+  }
+
+  return { init, render, renderLegend, setSelectedNode, renderCrossFile };
 
 })();

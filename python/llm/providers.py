@@ -29,10 +29,13 @@ Dependencies:
     httpx (for Ollama HTTP calls), anthropic (optional, for cloud provider)
 """
 
+import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # ── Data Classes ──────────────────────────────────────────────────
@@ -109,6 +112,7 @@ class OllamaProvider(LLMProvider):
         """
         self.base_url = base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         self.model = model or os.environ.get("OLLAMA_MODEL", "llama3.1")
+        self.last_error: Optional[str] = None
 
     @staticmethod
     def _normalize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -229,7 +233,9 @@ class OllamaProvider(LLMProvider):
                 if self.model not in models:
                     self.model = models[0]
                 return True
-        except Exception:
+        except Exception as exc:
+            logger.warning("Ollama check_available failed (%s): %s", self.base_url, exc)
+            self.last_error = str(exc)
             return False
 
 
@@ -246,14 +252,17 @@ class AnthropicProvider(LLMProvider):
 
     security_level = "CLOUD"
 
-    def __init__(self, api_key: str = None, model: str = "claude-sonnet-4-20250514"):
+    DEFAULT_MODEL = "claude-sonnet-4-20250514"
+
+    def __init__(self, api_key: str = None, model: str = None):
         """Initialize the Anthropic provider.
 
         :param api_key: Anthropic API key (default: ANTHROPIC_API_KEY env)
-        :param model: Model name (default: claude-sonnet-4-20250514)
+        :param model: Model name (default: ANTHROPIC_MODEL env or claude-sonnet-4-20250514)
         """
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        self.model = model
+        self.model = model or os.environ.get("ANTHROPIC_MODEL", self.DEFAULT_MODEL)
+        self.last_error: Optional[str] = None
 
     async def chat(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]] = None) -> ProviderResponse:
         """Send messages to Anthropic's messages.create endpoint.
@@ -326,4 +335,9 @@ class AnthropicProvider(LLMProvider):
 
     async def check_available(self) -> bool:
         """Check if Anthropic is configured (API key present)."""
-        return bool(self.api_key)
+        if not self.api_key:
+            self.last_error = "ANTHROPIC_API_KEY not set"
+            logger.warning("Anthropic check_available: no API key configured")
+            return False
+        self.last_error = None
+        return True

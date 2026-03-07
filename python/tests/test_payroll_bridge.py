@@ -249,3 +249,48 @@ class TestEdgeCases:
         assert emp is not None
         assert isinstance(emp["salary"], float)
         assert emp["salary"] > 0
+
+
+# ── Malformed Data Tests ─────────────────────────────────────────
+
+class TestMalformedData:
+
+    def test_non_numeric_salary_uses_default(self, temp_data_dir):
+        """Non-numeric salary field falls back to 0 via _safe_int."""
+        payroll_dir = temp_data_dir / "PAYROLL"
+        dat_file = payroll_dir / "EMPLOYEES.DAT"
+
+        # Write a malformed record with 'ABCDE' in the salary field (pos 20-29)
+        # Format: emp_id(7) + name(20) + salary(10) + ... (rest to fill 95 bytes)
+        bad_record = "EMP-099" + "Test Bad Salary      " + "ABCDEFGHIJ" + " " * 58
+        assert len(bad_record) == 95 + 1  # +1 for the extra space — let me fix the length
+
+        # Proper 95-byte record
+        bad_record = (
+            "EMP-099"                      # 7: emp_id
+            "Test Bad Salary      "        # 20: name (padded to 20)
+            "ABCDEFGHIJ"                   # 10: salary (non-numeric!)
+            "0000010000"                   # 10: hourly_rate
+            "040"                          # 3: hours_worked
+            "26"                           # 2: pay_periods
+            "1"                            # 1: tax_bracket
+            "A"                            # 1: status
+            "BANK_A"                       # 6: bank_code (padded to 6)
+            "000"                          # 3: deduction_code
+            "0000"                         # 4: k401_pct
+            "S"                            # 1: pay_type
+            "20260217"                     # 8: hire_date
+            "M"                            # 1: department
+        )
+        # Pad to exactly 95 bytes
+        bad_record = bad_record.ljust(95)
+
+        # Append to existing file
+        with open(dat_file, "a") as f:
+            f.write(bad_record + "\n")
+
+        bridge = PayrollBridge(data_dir=str(temp_data_dir))
+        emp = bridge.get_employee("EMP-099")
+        assert emp is not None
+        # _safe_int should have fallen back to 0
+        assert emp["salary"] == 0.0

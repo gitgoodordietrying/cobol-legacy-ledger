@@ -83,12 +83,21 @@ def test_console_html_loads(client):
     assert 'id="healthDot"' in html
     # SVG graph container
     assert 'id="graphContainer"' in html
-    # Event feed
-    assert 'id="feedList"' in html
+    # Event feed (outgoing + incoming + system)
+    assert 'id="feedListOut"' in html
+    assert 'id="feedListSystem"' in html
     # COBOL viewer
     assert 'id="cobolSource"' in html
     # Chat input
     assert 'id="chatInput"' in html
+    # Chat prompt chips
+    assert 'chat-chip' in html
+    # API key input
+    assert 'id="apiKeyInput"' in html
+    # Model selector
+    assert 'id="modelSelect"' in html
+    # Cross-file analysis card
+    assert 'id="crossFileCard"' in html
     # Toast container
     assert 'id="toastContainer"' in html
     # All JS scripts referenced
@@ -131,7 +140,7 @@ def test_console_has_cobol_file_selector(client):
 
 CSS_FILES = [
     'variables.css', 'layout.css', 'components.css',
-    'dashboard.css', 'chat.css',
+    'dashboard.css', 'chat.css', 'analysis.css',
 ]
 
 @pytest.mark.parametrize("filename", CSS_FILES)
@@ -160,6 +169,7 @@ JS_FILES = [
     'utils.js', 'api-client.js', 'app.js',
     'network-graph.js', 'cobol-viewer.js',
     'dashboard.js', 'chat.js',
+    'call-graph.js', 'compare-viewer.js', 'analysis.js',
 ]
 
 @pytest.mark.parametrize("filename", JS_FILES)

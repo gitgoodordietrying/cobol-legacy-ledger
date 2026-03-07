@@ -138,3 +138,137 @@ class TestValidate:
         """Returns 400 when neither source_text nor file_path provided."""
         resp = client.post("/api/codegen/validate", json={})
         assert resp.status_code == 400
+
+
+# ── Path Traversal Protection ──────────────────────────────────────
+# Verify that file_path inputs are restricted to COBOL source dirs.
+
+class TestPathTraversal:
+    """Path traversal prevention in parse and validate endpoints."""
+
+    def test_parse_path_traversal_relative(self, client):
+        """Relative path traversal (../) is rejected with 403."""
+        resp = client.post("/api/codegen/parse", json={
+            "file_path": "../../../../etc/passwd",
+        })
+        assert resp.status_code == 403
+
+    def test_parse_path_traversal_absolute(self, client):
+        """Absolute path outside project is rejected with 403."""
+        resp = client.post("/api/codegen/parse", json={
+            "file_path": "/etc/passwd",
+        })
+        assert resp.status_code == 403
+
+    def test_validate_path_traversal_relative(self, client):
+        """Validate endpoint also blocks path traversal."""
+        resp = client.post("/api/codegen/validate", json={
+            "file_path": "../../../etc/shadow",
+        })
+        assert resp.status_code == 403
+
+    def test_validate_path_traversal_absolute(self, client):
+        """Validate endpoint blocks absolute paths outside project."""
+        resp = client.post("/api/codegen/validate", json={
+            "file_path": "/tmp/malicious.cob",
+        })
+        assert resp.status_code == 403
+
+    def test_parse_valid_cobol_file(self, client):
+        """Valid COBOL file path in allowed directory succeeds."""
+        resp = client.post("/api/codegen/parse", json={
+            "file_path": "COBOL-BANKING/src/SMOKETEST.cob",
+        })
+        # 200 if file exists, 404 if not — but never 403
+        assert resp.status_code in (200, 404)
+
+    def test_parse_path_traversal_within_project(self, client):
+        """Path that traverses within project but escapes COBOL dirs is blocked."""
+        resp = client.post("/api/codegen/parse", json={
+            "file_path": "COBOL-BANKING/src/../../python/api/app.py",
+        })
+        assert resp.status_code == 403
+
+
+# ── Generate Templates ──────────────────────────────────────────
+# POST /api/codegen/generate — test additional template types.
+
+class TestGenerateTemplates:
+
+    def test_generate_crud_program(self, client):
+        """Generates a CRUD program from template."""
+        resp = client.post("/api/codegen/generate", json={
+            "template": "crud",
+            "name": "CUSTMGMT",
+            "params": {
+                "record_copybook": "CUSTREC",
+                "record_name": "CUSTOMER-RECORD",
+                "file_name": "CUSTOMERS",
+                "id_field": "CUST-ID",
+            },
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "source" in data
+        assert data["line_count"] > 0
+
+    def test_generate_report_program(self, client):
+        """Generates a report program from template."""
+        resp = client.post("/api/codegen/generate", json={
+            "template": "report",
+            "name": "CUSTRPT",
+            "params": {
+                "input_files": [{"logical_name": "CUSTFILE", "physical_name": "CUSTOMERS.DAT"}],
+                "report_types": ["STATEMENT"],
+            },
+        })
+        assert resp.status_code == 200
+        assert resp.json()["line_count"] > 0
+
+    def test_generate_batch_program(self, client):
+        """Generates a batch processing program from template."""
+        resp = client.post("/api/codegen/generate", json={
+            "template": "batch",
+            "name": "CUSTBATCH",
+            "params": {
+                "input_file": "CUSTOMERS",
+                "input_copybook": "CUSTREC",
+                "record_name": "CUSTOMER-RECORD",
+            },
+        })
+        assert resp.status_code == 200
+        assert resp.json()["line_count"] > 0
+
+    def test_generate_crud_missing_params(self, client):
+        """CRUD template with missing required params returns 400."""
+        resp = client.post("/api/codegen/generate", json={
+            "template": "crud",
+            "name": "BROKEN",
+            "params": {},
+        })
+        assert resp.status_code == 400
+
+
+# ── Edit Error Paths ────────────────────────────────────────────
+# POST /api/codegen/edit — test invalid params for valid operations.
+
+class TestEditErrorPaths:
+
+    def test_edit_add_field_missing_params(self, client):
+        """Add field with missing required params returns 400."""
+        resp = client.post("/api/codegen/edit", json={
+            "source_text": SAMPLE_COBOL,
+            "operation": "add_field",
+            "params": {},
+        })
+        assert resp.status_code == 400
+
+    def test_edit_rename_paragraph(self, client):
+        """Rename paragraph operation works with valid params."""
+        resp = client.post("/api/codegen/edit", json={
+            "source_text": SAMPLE_COBOL,
+            "operation": "rename_paragraph",
+            "params": {"old_name": "MAIN-PARAGRAPH", "new_name": "ENTRY-POINT"},
+        })
+        assert resp.status_code == 200
+        assert "ENTRY-POINT" in resp.json()["source"]

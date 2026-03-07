@@ -9,7 +9,10 @@
 const Dashboard = (() => {
 
   let sse = null;
-  let feedCount = 0;
+  let _sseRecovering = false;  // Guard against stacking SSE error recovery polls
+  let feedCountOut = 0;
+  let feedCountIn = 0;
+  let feedCountSystem = 0;
   const MAX_FEED = 200;
 
   const IDLE_NARRATIVE = 'Five banks, one clearing house. Hit Start to run a 25-day banking simulation.';
@@ -178,7 +181,10 @@ const Dashboard = (() => {
     };
 
     sse.onerror = () => {
-      // SSE will auto-reconnect; if sim ended, stop gracefully
+      // SSE will auto-reconnect; if sim ended, stop gracefully.
+      // Guard prevents stacking multiple recovery polls on rapid errors.
+      if (_sseRecovering) return;
+      _sseRecovering = true;
       setTimeout(() => {
         pollStatus().then(status => {
           if (!status.running) {
@@ -188,7 +194,7 @@ const Dashboard = (() => {
             const done = document.getElementById('statCompleted')?.textContent || '0';
             setNarrative(`Simulation complete \u2014 ${done} transactions, ${vol} total volume.`, 'success');
           }
-        });
+        }).finally(() => { _sseRecovering = false; });
       }, 2000);
     };
   }
@@ -259,18 +265,10 @@ const Dashboard = (() => {
   }
 
   /**
-   * Add an item to the transaction log.
-   * Structured 4-column layout: day badge | type badge | details | status.
+   * Classify an event into type metadata.
+   * @returns {{ typeClass, typeLabel, detailText, statusLabel, statusClass }}
    */
-  function addFeedItem(event) {
-    const feedList = document.getElementById('feedList');
-    if (!feedList) return;
-
-    // Remove empty state message
-    const emptyEl = feedList.querySelector('.feed__empty');
-    if (emptyEl) emptyEl.remove();
-
-    // Classify event → typeClass, typeLabel, detailText, statusLabel, statusClass
+  function classifyEvent(event) {
     let typeClass = 'default';
     let typeLabel = '???';
     let detailText = '';
@@ -278,11 +276,9 @@ const Dashboard = (() => {
     let statusClass = '';
 
     if (event.type === 'scenario') {
-      typeClass = /TAMPER|SUSPICIOUS|LARGE_TRANSFER|COMPLIANCE/i.test(event.event_type || '')
-        ? 'scenario' : 'scenario';
+      typeClass = 'scenario';
       typeLabel = 'SCN';
       detailText = `${event.event_type}: ${Utils.truncate(event.description, 55)}`;
-      // Scenarios don't have OK/FAIL status
     } else if (event.type === 'external' || event.type === 'settlement') {
       typeClass = 'settlement';
       typeLabel = 'STL';
@@ -308,7 +304,6 @@ const Dashboard = (() => {
       statusLabel = event.status === '00' || event.status === 'COMPLETED' ? 'OK' : 'FAIL';
       statusClass = statusLabel === 'OK' ? 'ok' : 'fail';
     } else {
-      // Fallback for any other event type
       typeClass = 'default';
       typeLabel = (event.type || '???').toUpperCase().slice(0, 3);
       detailText = `${event.bank || ''} ${event.account || ''} $${event.amount?.toFixed(2) || '0.00'}`;
@@ -321,7 +316,41 @@ const Dashboard = (() => {
     if (/VERIFY_FAIL/i.test(desc)) statusClass = 'fail';
     if (/TAMPER_BALANCE/i.test(event.event_type || '')) typeClass = 'error';
 
-    // Build structured item
+    return { typeClass, typeLabel, detailText, statusLabel, statusClass };
+  }
+
+  /**
+   * Determine which panel(s) an event should appear in.
+   * @returns {'out'|'in'|'both'|'banner'}
+   */
+  function classifyDirection(event) {
+    if (event.type === 'scenario') return 'banner';
+    if (event.type === 'deposit') return 'in';
+    if (event.type === 'withdraw') return 'out';
+    if (event.type === 'external' || event.type === 'settlement') return 'both';
+    return 'out';
+  }
+
+  /**
+   * Build a feed item DOM element.
+   * @param {object} event - SSE event data
+   * @param {object} classification - from classifyEvent()
+   * @param {'out'|'in'|null} side - which panel this copy is for (null = scenario banner)
+   */
+  function buildFeedItemEl(event, classification, side) {
+    const { typeClass, typeLabel, statusLabel, statusClass } = classification;
+    let { detailText } = classification;
+
+    // Direction-specific detail text for transfers/settlements
+    if (side && (event.type === 'external' || event.type === 'settlement')) {
+      const amt = `$${event.amount?.toFixed(2) || '0.00'}`;
+      if (side === 'out') {
+        detailText = `${event.bank} \u2192 ${event.dest_bank} -${amt}`;
+      } else {
+        detailText = `${event.dest_bank} \u2190 ${event.bank} +${amt}`;
+      }
+    }
+
     const item = document.createElement('div');
     item.className = `feed__item feed__item--${typeClass}`;
 
@@ -346,29 +375,86 @@ const Dashboard = (() => {
       item.appendChild(status);
     }
 
-    // Insert at top (newest first)
-    feedList.insertBefore(item, feedList.firstChild);
-    feedCount++;
+    return item;
+  }
 
-    // Update count badge
-    setText('feedCount', feedCount.toString());
+  /**
+   * Insert an item at the top of a panel list, capping at MAX_FEED.
+   */
+  function appendToPanel(listEl, item) {
+    // Remove empty state message
+    const emptyEl = listEl.querySelector('.feed__empty');
+    if (emptyEl) emptyEl.remove();
 
-    // Cap at MAX_FEED
-    while (feedList.children.length > MAX_FEED) {
-      feedList.removeChild(feedList.lastChild);
+    listEl.insertBefore(item, listEl.firstChild);
+
+    while (listEl.children.length > MAX_FEED) {
+      listEl.removeChild(listEl.lastChild);
     }
+  }
+
+  /**
+   * Add an item to the transaction log (split into outgoing/incoming panels).
+   * Structured 4-column layout: day badge | type badge | details | status.
+   */
+  function addFeedItem(event) {
+    const listOut = document.getElementById('feedListOut');
+    const listIn = document.getElementById('feedListIn');
+    const listSystem = document.getElementById('feedListSystem');
+    if (!listOut || !listIn) return;
+
+    const classification = classifyEvent(event);
+    const direction = classifyDirection(event);
+
+    if (direction === 'banner') {
+      // Route scenario/system events to the System panel
+      if (listSystem) {
+        const item = buildFeedItemEl(event, classification, null);
+        appendToPanel(listSystem, item);
+        feedCountSystem++;
+        setText('feedCountSystem', feedCountSystem.toString());
+      }
+    }
+
+    if (direction === 'both' || direction === 'out') {
+      const item = buildFeedItemEl(event, classification, 'out');
+      appendToPanel(listOut, item);
+      feedCountOut++;
+      setText('feedCountOut', feedCountOut.toString());
+    }
+
+    if (direction === 'both' || direction === 'in') {
+      const item = buildFeedItemEl(event, classification, 'in');
+      appendToPanel(listIn, item);
+      feedCountIn++;
+      setText('feedCountIn', feedCountIn.toString());
+    }
+
+    // Update total badge
+    setText('feedCountTotal', (feedCountOut + feedCountIn + feedCountSystem).toString());
   }
 
   /**
    * Clear the transaction log.
    */
   function clearFeed() {
-    const feedList = document.getElementById('feedList');
-    if (feedList) {
-      feedList.innerHTML = '';
+    const listOut = document.getElementById('feedListOut');
+    const listIn = document.getElementById('feedListIn');
+    const listSystem = document.getElementById('feedListSystem');
+    if (listOut) listOut.innerHTML = '';
+    if (listIn) listIn.innerHTML = '';
+    if (listSystem) listSystem.innerHTML = '';
+    feedCountOut = 0;
+    feedCountIn = 0;
+    feedCountSystem = 0;
+    setText('feedCountOut', '0');
+    setText('feedCountIn', '0');
+    setText('feedCountSystem', '0');
+    setText('feedCountTotal', '0');
+    // Clear COBOL terminal log
+    if (typeof CobolViewer !== 'undefined' && CobolViewer.clearLog) {
+      CobolViewer.clearLog();
     }
-    feedCount = 0;
-    setText('feedCount', '0');
   }
 
   /**
@@ -412,7 +498,17 @@ const Dashboard = (() => {
    * Run cross-node verification.
    */
   async function verifyAll() {
+    const btn = document.getElementById('btnVerify');
+    const origText = btn?.textContent || 'Integrity Check';
+
     try {
+      // Show loading state
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Checking\u2026';
+      }
+      NetworkGraph.pulseAllRings(5000);
+
       const result = await ApiClient.post('/api/settlement/verify');
       const intact = result.all_chains_intact;
       const matched = result.all_settlements_matched;
@@ -439,6 +535,12 @@ const Dashboard = (() => {
       NetworkGraph.refreshNodeData();
     } catch (err) {
       Utils.showToast(err.message, 'danger');
+    } finally {
+      // Restore button
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
     }
   }
 

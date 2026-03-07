@@ -35,8 +35,9 @@ Dependencies:
     python.llm.audit
 """
 
+import logging
 import os
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from python.auth import AuthContext
@@ -59,6 +60,7 @@ _current_provider: Optional[LLMProvider] = None
 _audit_log: Optional[AuditLog] = None
 _executor: Optional[ToolExecutor] = None
 _conversations: dict = {}  # user_id -> ConversationManager
+_anthropic_key: Optional[str] = None  # In-memory API key from UI (not persisted)
 
 
 # ── Private Helpers ───────────────────────────────────────────────
@@ -179,15 +181,18 @@ async def switch_provider(req: ProviderSwitchRequest):
     provider may have different capabilities, context windows, and tool
     formats. Users must start fresh conversations after switching.
     """
-    global _current_provider, _conversations
+    global _current_provider, _conversations, _anthropic_key
 
     if req.provider == "ollama":
         _current_provider = OllamaProvider(model=req.model)
     elif req.provider == "anthropic":
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        # Use UI-provided key, then in-memory key, then env var
+        if req.api_key:
+            _anthropic_key = req.api_key
+        api_key = _anthropic_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
-            raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY not configured")
-        _current_provider = AnthropicProvider(api_key=api_key, model=req.model or "claude-sonnet-4-20250514")
+            raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY not configured. Paste your key in the sidebar.")
+        _current_provider = AnthropicProvider(api_key=api_key, model=req.model)
 
     _conversations.clear()  # Invalidate all sessions — new provider, fresh start
 
@@ -198,6 +203,28 @@ async def switch_provider(req: ProviderSwitchRequest):
         security_level=_current_provider.security_level,
         available=available,
     )
+
+
+@router.get("/chat/models")
+async def list_models() -> List[str]:
+    """List available Ollama models by querying the local Ollama API.
+
+    Returns an empty list if Ollama is unreachable or not the active provider.
+    Anthropic models are static, so this endpoint is primarily for Ollama.
+    """
+    provider = _get_provider()
+    if not isinstance(provider, OllamaProvider):
+        return []
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{provider.base_url}/api/tags")
+            if resp.status_code == 200:
+                data = resp.json()
+                return [m["name"] for m in data.get("models", [])]
+    except Exception:
+        pass
+    return []
 
 
 @router.get("/provider/status", response_model=ProviderStatus)

@@ -26,6 +26,8 @@ Dependencies:
     fastapi, python.api.models, python.cobol_codegen
 """
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 
 from python.api.models import (
@@ -40,6 +42,39 @@ from python.cobol_codegen import (
 )
 
 router = APIRouter(prefix="/api/codegen", tags=["codegen"])
+
+
+# ── Path Safety ──────────────────────────────────────────────────
+# Restrict file_path inputs to known COBOL source directories.
+# Prevents path traversal attacks (e.g., "../../../../etc/passwd").
+
+_ALLOWED_COBOL_DIRS = [
+    Path("COBOL-BANKING/src"),
+    Path("COBOL-BANKING/copybooks"),
+    Path("COBOL-BANKING/payroll/src"),
+    Path("COBOL-BANKING/payroll/copybooks"),
+]
+
+
+def _validate_cobol_path(file_path: str) -> Path:
+    """Resolve file_path and verify it falls within allowed COBOL directories.
+
+    Raises HTTPException 403 if the resolved path escapes the allowed
+    source directories. This prevents directory traversal via crafted
+    file_path values like '../../../etc/passwd'.
+    """
+    resolved = Path(file_path).resolve()
+    for allowed in _ALLOWED_COBOL_DIRS:
+        allowed_resolved = allowed.resolve()
+        try:
+            resolved.relative_to(allowed_resolved)
+            return resolved
+        except ValueError:
+            continue
+    raise HTTPException(
+        status_code=403,
+        detail="File path not in allowed COBOL source directories",
+    )
 
 
 # ── Parse ─────────────────────────────────────────────────────────
@@ -57,8 +92,9 @@ def parse_cobol(req: CodegenParseRequest):
     if req.source_text:
         program = parser.parse_text(req.source_text)
     elif req.file_path:
+        safe_path = _validate_cobol_path(req.file_path)
         try:
-            program = parser.parse_file(req.file_path)
+            program = parser.parse_file(str(safe_path))
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"File not found: {req.file_path}")
     else:
@@ -188,8 +224,9 @@ def validate_cobol(req: CodegenValidateRequest):
     if req.source_text:
         program = parser.parse_text(req.source_text)
     elif req.file_path:
+        safe_path = _validate_cobol_path(req.file_path)
         try:
-            program = parser.parse_file(req.file_path)
+            program = parser.parse_file(str(safe_path))
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"File not found: {req.file_path}")
     else:

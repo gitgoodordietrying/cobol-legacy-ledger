@@ -36,7 +36,9 @@ Dependencies:
 """
 
 import dataclasses
+import os
 import re
+from pathlib import Path
 from typing import Dict, Any, Optional
 
 from python.auth import AuthContext
@@ -59,6 +61,20 @@ from python.llm.audit import AuditLog
 # Validation patterns matching the 6-node architecture and COBOL record formats.
 VALID_NODES = {"BANK_A", "BANK_B", "BANK_C", "BANK_D", "BANK_E", "CLEARING"}
 ACCOUNT_PATTERN = re.compile(r"^(ACT-[A-E]-\d{3}|NST-BANK-[A-E])$")  # Matches ACCT-ID PIC X(10) format
+
+# ── COBOL File Whitelist ─────────────────────────────────────────
+# Valid file names for server-side file reading (compare_complexity tool).
+# Prevents path traversal — only these 18 .cob files are allowed.
+PAYROLL_FILES = {
+    "PAYROLL.cob", "TAXCALC.cob", "DEDUCTN.cob", "PAYBATCH.cob",
+    "MERCHANT.cob", "FEEENGN.cob", "DISPUTE.cob", "RISKCHK.cob",
+}
+CLEAN_FILES = {
+    "ACCOUNTS.cob", "TRANSACT.cob", "VALIDATE.cob", "REPORTS.cob",
+    "INTEREST.cob", "FEES.cob", "RECONCILE.cob", "SIMULATE.cob",
+    "SETTLE.cob", "SMOKETEST.cob",
+}
+COBOL_FILES = PAYROLL_FILES | CLEAN_FILES
 
 
 class ToolExecutor:
@@ -111,6 +127,22 @@ class ToolExecutor:
         if self._verifier is None:
             self._verifier = CrossNodeVerifier(data_dir=self.data_dir, force_mode_b=self.force_mode_b)
         return self._verifier
+
+    def _read_cobol_file(self, filename: str) -> str:
+        """Read a COBOL source file by name from the whitelisted set.
+
+        Resolves payroll files to COBOL-BANKING/payroll/src/ and clean files
+        to COBOL-BANKING/src/. Raises ValueError for invalid file names.
+        """
+        if filename not in COBOL_FILES:
+            raise ValueError(f"Unknown COBOL file: {filename}. Valid files: {sorted(COBOL_FILES)}")
+        if filename in PAYROLL_FILES:
+            path = Path("COBOL-BANKING/payroll/src") / filename
+        else:
+            path = Path("COBOL-BANKING/src") / filename
+        if not path.exists():
+            raise FileNotFoundError(f"COBOL file not found: {path}")
+        return path.read_text(encoding="utf-8")
 
     def execute(self, tool_name: str, params: Dict[str, Any], auth: AuthContext, provider: str = "") -> Dict[str, Any]:
         """Execute a tool call through the 4-layer pipeline.
@@ -391,5 +423,37 @@ class ToolExecutor:
                     "suggestions": suggestions,
                 }
             return entry
+
+        elif tool_name == "compare_complexity":
+            source_a = self._read_cobol_file(params["file_a"])
+            source_b = self._read_cobol_file(params["file_b"])
+            cx_a = self._cx_analyzer.analyze(source_a)
+            cx_b = self._cx_analyzer.analyze(source_b)
+            dc_a = self._dc_analyzer.analyze(source_a)
+            dc_b = self._dc_analyzer.analyze(source_b)
+
+            def _summarize(cx, dc, filename):
+                hotspots = sorted(cx.paragraphs.values(), key=lambda p: p.score, reverse=True)[:5]
+                dc_dict = dc.to_dict()
+                return {
+                    "file": filename,
+                    "total_score": cx.total_score,
+                    "rating": cx.rating,
+                    "paragraph_count": len(cx.paragraphs),
+                    "hotspots": [{"name": h.name, "score": h.score, "factors": h.factors} for h in hotspots],
+                    "dead_code_count": len(dc_dict.get("dead_paragraphs", [])),
+                    "alter_conditional_count": len(dc_dict.get("alter_conditional", [])),
+                }
+
+            summary_a = _summarize(cx_a, dc_a, params["file_a"])
+            summary_b = _summarize(cx_b, dc_b, params["file_b"])
+            return {
+                "file_a": summary_a,
+                "file_b": summary_b,
+                "delta": {
+                    "score_difference": summary_a["total_score"] - summary_b["total_score"],
+                    "dead_code_difference": summary_a["dead_code_count"] - summary_b["dead_code_count"],
+                },
+            }
 
         return {"error": f"Unimplemented tool: {tool_name}"}

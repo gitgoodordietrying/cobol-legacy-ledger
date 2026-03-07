@@ -53,10 +53,19 @@ def _get_coordinator() -> SettlementCoordinator:
 
 
 def _get_auth(request: Request):
-    """Extract auth context from request headers."""
+    """Extract auth context from request headers.
+
+    Parses X-Role into a Role enum, falling back to VIEWER for unknown
+    values. Both user and role are passed to get_auth_context() so that
+    non-demo users inherit the correct permissions for their stated role.
+    """
     user = request.headers.get("X-User", "viewer")
-    role_str = request.headers.get("X-Role", "")
-    return get_auth_context(user)
+    role_str = request.headers.get("X-Role", "viewer")
+    try:
+        role = Role(role_str.lower())
+    except ValueError:
+        role = Role.VIEWER
+    return get_auth_context(user, role)
 
 
 # ── Endpoints ─────────────────────────────────────────────────

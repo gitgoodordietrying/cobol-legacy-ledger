@@ -313,5 +313,74 @@ class TestHealth:
         resp = client.get("/api/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["version"] == "3.0.0"
+        assert data["version"] == "6.1.0"
         assert "nodes_available" in data
+
+    def test_health_degraded_no_nodes(self, client, tmp_data):
+        """Health returns degraded when no node directories exist."""
+        import shutil
+        from python.api import routes_health
+        # Patch the DATA_DIR in the health module (imported at top level)
+        empty_dir = tmp_data + "_empty"
+        os.makedirs(empty_dir, exist_ok=True)
+        original = routes_health.DATA_DIR
+        routes_health.DATA_DIR = empty_dir
+        try:
+            resp = client.get("/api/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "degraded"
+            assert data["nodes_available"] == 0
+            assert data["db_status"] == "no_data"
+        finally:
+            routes_health.DATA_DIR = original
+            shutil.rmtree(empty_dir, ignore_errors=True)
+
+    def test_health_ollama_unavailable(self, client):
+        """Health gracefully reports Ollama unavailable when probe fails."""
+        with patch("httpx.get", side_effect=ConnectionError("refused")):
+            resp = client.get("/api/health")
+            assert resp.status_code == 200
+            assert resp.json()["ollama_available"] is False
+
+
+# ── Boundary Value Tests ─────────────────────────────────────────
+# Test Pydantic field constraints at exact boundaries.
+
+class TestBoundaryValues:
+
+    def test_transaction_amount_zero_rejected(self, client):
+        """Amount=0 is rejected by Pydantic gt=0 constraint."""
+        resp = client.post("/api/nodes/BANK_A/transactions", headers=ADMIN_HEADERS, json={
+            "account_id": "ACT-A-001", "tx_type": "D", "amount": 0, "description": "zero",
+        })
+        assert resp.status_code == 422
+
+    def test_transaction_negative_amount_rejected(self, client):
+        """Negative amount is rejected by Pydantic gt=0 constraint."""
+        resp = client.post("/api/nodes/BANK_A/transactions", headers=ADMIN_HEADERS, json={
+            "account_id": "ACT-A-001", "tx_type": "D", "amount": -50, "description": "neg",
+        })
+        assert resp.status_code == 422
+
+    def test_transaction_description_max_length(self, client):
+        """Description at exactly 40 characters (max_length) is accepted."""
+        resp = client.post("/api/nodes/BANK_A/transactions", headers=ADMIN_HEADERS, json={
+            "account_id": "ACT-A-001", "tx_type": "D", "amount": 1,
+            "description": "A" * 40,
+        })
+        assert resp.status_code == 200
+
+    def test_transaction_description_over_max_rejected(self, client):
+        """Description exceeding 40 characters is rejected."""
+        resp = client.post("/api/nodes/BANK_A/transactions", headers=ADMIN_HEADERS, json={
+            "account_id": "ACT-A-001", "tx_type": "D", "amount": 1,
+            "description": "A" * 41,
+        })
+        assert resp.status_code == 422
+
+    def test_chain_view_large_offset(self, client):
+        """Chain query with offset beyond end returns empty list."""
+        resp = client.get("/api/nodes/BANK_A/chain?offset=999999", headers=ADMIN_HEADERS)
+        assert resp.status_code == 200
+        assert resp.json() == []

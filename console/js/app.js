@@ -48,6 +48,20 @@ const App = (() => {
 
     // First-visit onboarding
     showOnboarding();
+
+    // Global Escape key to dismiss overlays
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const overlays = ['cobolModal', 'nodePopup', 'onboarding'];
+      for (const id of overlays) {
+        const el = document.getElementById(id);
+        if (el && el.style.display !== 'none') {
+          el.style.display = 'none';
+          if (id === 'onboarding') localStorage.setItem('cll_onboarded', '1');
+          break;
+        }
+      }
+    });
   }
 
   /**
@@ -56,9 +70,11 @@ const App = (() => {
   function switchView(viewName) {
     currentView = viewName;
 
-    // Update tab active states
+    // Update tab active states and ARIA
     document.querySelectorAll('.nav__tab').forEach(tab => {
-      tab.classList.toggle('nav__tab--active', tab.dataset.view === viewName);
+      const isActive = tab.dataset.view === viewName;
+      tab.classList.toggle('nav__tab--active', isActive);
+      tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
 
     // Show/hide views

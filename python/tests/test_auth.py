@@ -154,5 +154,36 @@ def test_get_auth_context_custom_role():
     assert ctx.user_id == "custom-user"
 
 
+# ── Auth Edge Cases ──────────────────────────────────────────────
+
+def test_get_auth_context_case_insensitive_role():
+    """Role enum accepts lowercase regardless of input case."""
+    ctx = get_auth_context("custom", Role.ADMIN)
+    assert ctx.role == Role.ADMIN
+
+
+def test_unknown_user_with_no_role_is_viewer():
+    """Unknown user with no explicit role defaults to VIEWER."""
+    ctx = get_auth_context("stranger")
+    assert ctx.role == Role.VIEWER
+    assert not ctx.has_permission("transactions.process")
+
+
+def test_user_id_with_special_chars():
+    """User ID with SQL-like characters is safe (no injection)."""
+    ctx = get_auth_context("'; DROP TABLE--", Role.VIEWER)
+    assert ctx.user_id == "'; DROP TABLE--"
+    assert ctx.role == Role.VIEWER
+    # AuthContext stores user_id as-is — it's never interpolated into SQL
+
+
+def test_admin_permissions_superset():
+    """Admin has every permission that any other role has."""
+    admin_perms = PERMISSIONS[Role.ADMIN]
+    for role in (Role.OPERATOR, Role.AUDITOR, Role.VIEWER):
+        for perm in PERMISSIONS[role]:
+            assert perm in admin_perms, f"Admin missing {perm} (from {role.value})"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

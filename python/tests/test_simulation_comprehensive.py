@@ -912,3 +912,59 @@ class TestDayEndEvents:
         finally:
             if q in sim_routes._event_queues:
                 sim_routes._event_queues.remove(q)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 11. ERROR PATHS
+# ═══════════════════════════════════════════════════════════════════
+
+class TestSimulationErrorPaths:
+    """Error paths for simulation endpoints."""
+
+    def test_reset_seed_failure_returns_500(self, client):
+        """Reset returns 500 if seed_demo_data raises."""
+        with patch("python.bridge.COBOLBridge.seed_demo_data", side_effect=OSError("disk full")):
+            resp = client.post("/api/simulation/reset", headers=ADMIN)
+            assert resp.status_code == 500
+            assert "disk full" in resp.json()["detail"]
+
+    def test_tamper_nonexistent_account_returns_400(self, client):
+        """Tamper on account that exists in schema but not in data returns 400."""
+        resp = client.post(
+            "/api/tamper-demo",
+            json={"node": "BANK_A", "account_id": "ACT-A-099", "amount": 100},
+            headers=ADMIN,
+        )
+        assert resp.status_code == 400
+
+    def test_list_transactions_invalid_node(self, client):
+        """List transactions for invalid node returns 404."""
+        resp = client.get("/api/nodes/BANK_Z/transactions", headers=ADMIN)
+        assert resp.status_code == 404
+
+    def test_list_transactions_with_limit(self, client):
+        """List transactions respects limit parameter."""
+        # Ensure there are transactions by doing a deposit
+        client.post("/api/nodes/BANK_A/transactions", headers=ADMIN, json={
+            "account_id": "ACT-A-001", "tx_type": "D", "amount": 50, "description": "test",
+        })
+        resp = client.get("/api/nodes/BANK_A/transactions?limit=1", headers=ADMIN)
+        assert resp.status_code == 200
+        assert len(resp.json()) <= 1
+
+    def test_simulation_days_max_boundary(self, client):
+        """Simulation with days=365 (max allowed) is accepted."""
+        # Just validate the request is accepted — don't wait for it to finish
+        resp = client.post("/api/simulation/start", headers=ADMIN, json={
+            "days": 365, "time_scale": 0, "scenarios": False,
+        })
+        assert resp.status_code == 200
+        # Stop immediately
+        client.post("/api/simulation/stop", headers=ADMIN)
+
+    def test_simulation_days_over_max_rejected(self, client):
+        """Simulation with days > 365 is rejected by Pydantic le=365."""
+        resp = client.post("/api/simulation/start", headers=ADMIN, json={
+            "days": 366, "time_scale": 0,
+        })
+        assert resp.status_code == 422

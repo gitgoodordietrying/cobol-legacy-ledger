@@ -80,8 +80,8 @@ class TestToolDefinitions:
             assert defn["required_permission"] == "cobol.read"
 
     def test_tool_count(self):
-        # 8 banking + 4 codegen + 7 analysis = 19
-        assert len(TOOLS) == 19
+        # 8 banking + 4 codegen + 8 analysis = 20
+        assert len(TOOLS) == 20
 
     def test_admin_sees_analysis_tools(self):
         tools = get_tools_for_role(Role.ADMIN)
