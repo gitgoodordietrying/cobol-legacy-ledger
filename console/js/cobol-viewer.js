@@ -13,24 +13,28 @@ const CobolViewer = (() => {
   let currentFile = 'SMOKETEST.cob';
   let currentParagraph = null;
   let tickerCount = 0;
-  const MAX_LOG_ENTRIES = 50;
+  const MAX_LOG_ENTRIES = 100;
+
+  // Track last rendered file+paragraph to skip redundant viewport updates
+  let _lastRenderedFile = null;
+  let _lastRenderedPara = null;
 
   // Map transaction type → file + paragraph for auto-navigation
   const TX_MAP = {
     deposit:   { file: 'TRANSACT.cob', para: 'PROCESS-DEPOSIT' },
     withdraw:  { file: 'TRANSACT.cob', para: 'PROCESS-WITHDRAW' },
     transfer:  { file: 'TRANSACT.cob', para: 'PROCESS-TRANSFER' },
-    external:  { file: 'SETTLE.cob',   para: 'EXECUTE-SETTLEMENT' },
-    interest:  { file: 'INTEREST.cob', para: 'COMPUTE-INTEREST' },
+    external:  { file: 'SETTLE.cob',   para: 'PROCESS-SETTLEMENT' },
+    interest:  { file: 'INTEREST.cob', para: 'CALCULATE-INTEREST' },
     fee:       { file: 'FEES.cob',     para: 'ASSESS-FEES' },
   };
 
   // Scenario event → file mapping
   const SCENARIO_MAP = {
-    FREEZE_ACCOUNT:   { file: 'ACCOUNTS.cob', para: 'UPDATE-ACCOUNT-STATUS' },
-    CLOSE_ACCOUNT:    { file: 'ACCOUNTS.cob', para: 'UPDATE-ACCOUNT-STATUS' },
-    TAMPER_BALANCE:   { file: 'RECONCILE.cob', para: 'RECONCILE-ACCOUNT' },
-    LARGE_TRANSFER:   { file: 'SETTLE.cob', para: 'EXECUTE-SETTLEMENT' },
+    FREEZE_ACCOUNT:   { file: 'ACCOUNTS.cob', para: 'UPDATE-ACCOUNT' },
+    CLOSE_ACCOUNT:    { file: 'ACCOUNTS.cob', para: 'CLOSE-ACCOUNT' },
+    TAMPER_BALANCE:   { file: 'RECONCILE.cob', para: 'CHECK-ACCOUNT-BALANCE' },
+    LARGE_TRANSFER:   { file: 'SETTLE.cob', para: 'PROCESS-SETTLEMENT' },
     DRAIN_TRANSFERS:  { file: 'TRANSACT.cob', para: 'PROCESS-TRANSFER' },
     SUSPICIOUS_BURST: { file: 'TRANSACT.cob', para: 'PROCESS-DEPOSIT' },
   };
@@ -118,15 +122,38 @@ const CobolViewer = (() => {
   }
 
   /**
-   * Show a paragraph snippet in the ticker as a terminal log entry.
-   * Prepends (newest first), capping at MAX_LOG_ENTRIES.
+   * Add a one-line entry to the compact event log.
+   */
+  function addLogEntry(filename, paragraphName) {
+    const logEl = document.getElementById('cobolLog');
+    if (!logEl) return;
+
+    const entry = document.createElement('div');
+    entry.className = 'cobol-ticker__log-entry cobol-ticker__log-entry--active';
+    entry.textContent = `[${tickerCount}] ${filename} \u2192 ${paragraphName || '???'}`;
+    logEl.insertBefore(entry, logEl.firstChild);
+
+    // Remove "active" highlight from the previous entry
+    const prev = entry.nextElementSibling;
+    if (prev) prev.classList.remove('cobol-ticker__log-entry--active');
+
+    // Cap at MAX_LOG_ENTRIES (lightweight — single text nodes)
+    while (logEl.children.length > MAX_LOG_ENTRIES) {
+      logEl.removeChild(logEl.lastChild);
+    }
+  }
+
+  /**
+   * Show a paragraph in the single code viewport. Only re-renders
+   * the viewport when the file+paragraph actually changes. Always
+   * adds a one-line log entry.
    */
   async function showSnippet(filename, paragraphName) {
-    const sourceEl = document.getElementById('cobolSource');
+    const viewportEl = document.getElementById('cobolViewport');
     const fileEl = document.getElementById('cobolFileName');
     const paraEl = document.getElementById('cobolParagraph');
     const badgeEl = document.getElementById('cobolProgramBadge');
-    if (!sourceEl) return;
+    if (!viewportEl) return;
 
     currentFile = filename;
     currentParagraph = paragraphName;
@@ -136,64 +163,45 @@ const CobolViewer = (() => {
     tickerCount++;
     if (badgeEl) badgeEl.textContent = `${tickerCount}`;
 
+    // Always add a compact log entry
+    addLogEntry(filename, paragraphName);
+
+    // Skip viewport re-render if same file+paragraph (dedup during bursts)
+    if (filename === _lastRenderedFile && paragraphName === _lastRenderedPara) {
+      return;
+    }
+    _lastRenderedFile = filename;
+    _lastRenderedPara = paragraphName;
+
     try {
       const source = await fetchFile(filename);
       const lines = source.split('\n');
       const range = findParagraph(lines, paragraphName);
 
-      // Build a log entry div
-      const entry = document.createElement('div');
-      entry.className = 'cobol-ticker__entry';
-
-      const header = document.createElement('div');
-      header.className = 'cobol-ticker__entry-header';
-      header.textContent = `[D${tickerCount}] ${filename} \u2192 ${paragraphName || '???'}`;
-      entry.appendChild(header);
-
-      const code = document.createElement('div');
-      code.className = 'cobol-ticker__entry-code';
-
       if (range) {
-        // Show first 8 lines of paragraph for compactness
-        const snippet = lines.slice(range.start, Math.min(range.end, range.start + 8));
-        code.innerHTML = snippet.map(highlightLine).join('\n');
+        const snippet = lines.slice(range.start, Math.min(range.end, range.start + 12));
+        viewportEl.innerHTML = snippet.map(highlightLine).join('\n');
       } else {
-        const preview = lines.slice(0, 8);
-        code.innerHTML = preview.map(highlightLine).join('\n');
-      }
-
-      entry.appendChild(code);
-
-      // Clear initial placeholder if present
-      if (sourceEl.querySelector('span[style]') && tickerCount === 1) {
-        sourceEl.innerHTML = '';
-      }
-
-      // Prepend newest entry
-      sourceEl.insertBefore(entry, sourceEl.firstChild);
-
-      // Cap entries
-      while (sourceEl.children.length > MAX_LOG_ENTRIES) {
-        sourceEl.removeChild(sourceEl.lastChild);
+        viewportEl.innerHTML = `<span style="color: var(--text-muted)">Paragraph not found: ${Utils.escapeHtml(paragraphName || '')}</span>`;
       }
     } catch {
-      // On error, still log the attempt
-      const entry = document.createElement('div');
-      entry.className = 'cobol-ticker__entry';
-      entry.innerHTML = `<div class="cobol-ticker__entry-header" style="color: var(--danger)">[D${tickerCount}] Failed to load ${Utils.escapeHtml(filename)}</div>`;
-      sourceEl.insertBefore(entry, sourceEl.firstChild);
+      viewportEl.innerHTML = `<span style="color: var(--danger)">Failed to load ${Utils.escapeHtml(filename)}</span>`;
     }
   }
 
   /**
-   * Clear all log entries and reset the ticker counter.
+   * Clear viewport and log, reset the ticker counter.
    */
   function clearLog() {
-    const sourceEl = document.getElementById('cobolSource');
-    if (sourceEl) {
-      sourceEl.innerHTML = '<span style="color: var(--text-muted)">Start a simulation to see live COBOL execution</span>';
+    const viewportEl = document.getElementById('cobolViewport');
+    if (viewportEl) {
+      viewportEl.innerHTML = '<span style="color: var(--text-muted)">Start a simulation to see live COBOL execution</span>';
     }
+    const logEl = document.getElementById('cobolLog');
+    if (logEl) logEl.innerHTML = '';
     tickerCount = 0;
+    _lastRenderedFile = null;
+    _lastRenderedPara = null;
     const badgeEl = document.getElementById('cobolProgramBadge');
     if (badgeEl) badgeEl.textContent = '\u2014';
   }

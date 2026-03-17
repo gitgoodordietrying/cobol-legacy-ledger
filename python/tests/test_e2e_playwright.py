@@ -173,10 +173,10 @@ class TestDashboardLoads:
 
     def test_cobol_viewer_loads_default_file(self, dash: Page):
         """COBOL viewer panel loads SMOKETEST.cob by default."""
-        viewer = dash.locator("#cobolSource")
+        viewer = dash.locator("#cobolViewport")
         expect(viewer).to_be_visible()
         dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.length > 50",
+            "document.querySelector('#cobolViewport').textContent.length > 50",
             timeout=5000,
         )
         # Default file should be SMOKETEST.cob
@@ -419,30 +419,30 @@ class TestCobolViewer:
         """showSnippet loads SMOKETEST.cob into the ticker."""
         dash.evaluate("CobolViewer.showSnippet('SMOKETEST.cob', null)")
         dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.length > 50",
+            "document.querySelector('#cobolViewport').textContent.length > 50",
             timeout=5000,
         )
-        content = dash.locator("#cobolSource").text_content()
+        content = dash.locator("#cobolViewport").text_content()
         assert "IDENTIFICATION" in content or "DIVISION" in content or "PROGRAM-ID" in content
 
     def test_switch_to_transact(self, dash: Page):
         """showSnippet switches ticker to TRANSACT.cob."""
         dash.evaluate("CobolViewer.showSnippet('TRANSACT.cob', 'PROCESS-DEPOSIT')")
         dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.length > 50",
+            "document.querySelector('#cobolViewport').textContent.length > 50",
             timeout=5000,
         )
-        content = dash.locator("#cobolSource").text_content()
+        content = dash.locator("#cobolViewport").text_content()
         assert "DEPOSIT" in content or "TRANSACT" in content
 
     def test_switch_to_settle(self, dash: Page):
         """showSnippet switches ticker to SETTLE.cob."""
         dash.evaluate("CobolViewer.showSnippet('SETTLE.cob', 'EXECUTE-SETTLEMENT')")
         dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.length > 50",
+            "document.querySelector('#cobolViewport').textContent.length > 50",
             timeout=5000,
         )
-        content = dash.locator("#cobolSource").text_content()
+        content = dash.locator("#cobolViewport").text_content()
         assert "SETTLE" in content or "SETTLEMENT" in content
 
     def test_all_ten_files_in_selector(self, dash: Page):
@@ -455,11 +455,11 @@ class TestCobolViewer:
         """COBOL viewer applies syntax highlighting spans."""
         dash.evaluate("CobolViewer.showSnippet('SMOKETEST.cob', null)")
         dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.length > 50",
+            "document.querySelector('#cobolViewport').textContent.length > 50",
             timeout=5000,
         )
         # Syntax highlighter wraps keywords in spans
-        spans = dash.locator("#cobolSource span")
+        spans = dash.locator("#cobolViewport span")
         assert spans.count() > 0, "Expected syntax highlighting spans"
 
 
@@ -929,7 +929,7 @@ class TestTeacherCobolExploration:
         """showSnippet highlights PROCESS-DEPOSIT in TRANSACT.cob ticker."""
         dash.evaluate("CobolViewer.showSnippet('TRANSACT.cob', 'PROCESS-DEPOSIT')")
         dash.wait_for_function(
-            "document.querySelector('#cobolSource').textContent.length > 50",
+            "document.querySelector('#cobolViewport').textContent.length > 50",
             timeout=5000,
         )
         # Paragraph indicator should show the target paragraph
@@ -937,7 +937,7 @@ class TestTeacherCobolExploration:
         assert "PROCESS-DEPOSIT" in para_text, \
             f"Expected PROCESS-DEPOSIT in paragraph indicator, got: {para_text}"
         # Highlight spans should exist in the ticker
-        highlights = dash.locator("#cobolSource .cobol-highlight")
+        highlights = dash.locator("#cobolViewport .cobol-highlight")
         assert highlights.count() > 0, "Expected highlighted spans in COBOL ticker"
         # File name should reflect TRANSACT.cob
         file_text = dash.locator("#cobolFileName").text_content()

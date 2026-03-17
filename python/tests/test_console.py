@@ -87,7 +87,7 @@ def test_console_html_loads(client):
     assert 'id="feedListOut"' in html
     assert 'id="feedListSystem"' in html
     # COBOL viewer
-    assert 'id="cobolSource"' in html
+    assert 'id="cobolViewport"' in html
     # Chat input
     assert 'id="chatInput"' in html
     # Chat prompt chips

@@ -196,16 +196,38 @@
   color: var(--text-muted);
 }
 
-.cobol-ticker__source {
-  flex: 1;
-  overflow: auto;
-  padding: var(--sp-3);
+.cobol-ticker__viewport {
+  padding: var(--sp-2) var(--sp-3);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: 1.6;
-  min-height: 0;
   white-space: pre;
   tab-size: 4;
+  min-height: 80px;
+  max-height: 180px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.cobol-ticker__log {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-1) var(--sp-3);
+  min-height: 0;
+}
+
+.cobol-ticker__log-entry {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  padding: 1px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cobol-ticker__log-entry--active {
+  color: var(--text-secondary);
 }
 
 /* ── COBOL Full-File Modal ──────────────────────────────────────── */
@@ -433,29 +455,7 @@
   color: #f59e0b;
 }
 
-/* ── COBOL Ticker — Terminal Log Entries ──────────────────────── */
-.cobol-ticker__entry {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  padding: var(--sp-1) var(--sp-3);
-}
-
-.cobol-ticker__entry-header {
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-.cobol-ticker__entry-code {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  white-space: pre;
-  padding-left: var(--sp-2);
-  max-height: 120px;
-  overflow: hidden;
-}
+/* (old .cobol-ticker__entry styles removed — replaced by viewport + log) */
 
 @media (max-width: 1200px) {
   .feed-split {

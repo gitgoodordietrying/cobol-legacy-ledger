@@ -158,9 +158,10 @@
               <span class="cobol-ticker__sep">/</span>
               <span class="cobol-ticker__para" id="cobolParagraph">—</span>
             </div>
-            <div class="cobol-ticker__source" id="cobolSource">
+            <div class="cobol-ticker__viewport" id="cobolViewport">
               <span style="color: var(--text-muted)">Start a simulation to see live COBOL execution</span>
             </div>
+            <div class="cobol-ticker__log" id="cobolLog"></div>
           </div>
         </div>
 
@@ -169,11 +170,11 @@
 
     <!-- ═══ Analysis View ═══════════════════════════════════════ -->
     <section class="view" id="view-analysis" role="tabpanel" aria-labelledby="tab-analysis">
-      <div class="dashboard-grid" style="grid-template-columns: 1fr;">
+      <div class="analysis-layout">
 
         <!-- Analysis Controls -->
         <div class="glass controls" id="analysisControls">
-          <select class="select" id="analysisFileSelect">
+          <select class="select analysis-select" id="analysisFileSelect">
             <option value="PAYROLL.cob">PAYROLL.cob (spaghetti)</option>
             <option value="TAXCALC.cob">TAXCALC.cob (nested IF)</option>
             <option value="DEDUCTN.cob">DEDUCTN.cob (mixed)</option>
@@ -189,9 +190,10 @@
           <button class="btn btn--primary" id="btnAnalyze">Analyze</button>
           <button class="btn" id="btnCompare">Compare Spaghetti vs Clean</button>
           <button class="btn" id="btnCrossFile">Cross-File Analysis</button>
-          <div class="controls__divider"></div>
-          <div class="analysis-summary" id="analysisSummary"></div>
         </div>
+
+        <!-- Analysis Summary Stats -->
+        <div class="analysis-summary glass" id="analysisSummary"></div>
 
         <!-- Analysis Content: Call Graph + Details -->
         <div class="analysis-grid" id="analysisGrid">
@@ -213,7 +215,7 @@
                 <option value="">Select entry point...</option>
               </select>
             </div>
-            <div class="exec-path" id="execPathContainer">
+            <div id="execPathContainer">
               <span style="color: var(--text-muted); font-size: var(--text-xs);">Select an entry point to trace execution</span>
             </div>
           </div>
