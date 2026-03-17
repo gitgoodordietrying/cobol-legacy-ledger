@@ -59,18 +59,18 @@ uvicorn python.api.app:app --reload
 ```
 
 The **web console** at `http://localhost:8000/console/` provides:
-- **Dashboard** — Hub-and-spoke network graph, simulation controls (start/pause/stop), real-time event feed via SSE, and a COBOL source viewer with syntax highlighting
-- **Analysis** — Call graph visualization, execution trace, dead code detection, complexity scoring, cross-file dependency analysis, and side-by-side spaghetti-vs-clean comparison with human vs AI timer
-- **Chat** — LLM chatbot with tool-use cards, tutor mode, provider switching (Ollama/Anthropic), and session management
+- **Dashboard** — Hub-and-spoke network with health rings, split transaction log (outgoing/incoming), live COBOL ticker viewport with syntax highlighting, simulation controls
+- **Analysis** — Orthogonal call graph with toggleable edge types, execution trace, dead code detection, complexity scoring, cross-file dependency analysis, spaghetti-vs-clean comparison
+- **Chat** — LLM chatbot with tool-use cards, tutor mode, prompt chips, provider switching (Ollama/Anthropic), session management
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="Glass morphism dashboard with hub-and-spoke network graph, simulation controls, real-time event feed, and COBOL source viewer" width="800">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard with hub-and-spoke network, split transaction log, live COBOL ticker, and simulation controls" width="800">
 </p>
 <p align="center">
-  <img src="docs/screenshots/chat.png" alt="LLM chatbot with tool-use cards showing account queries and banking operations" width="800">
+  <img src="docs/screenshots/analysis.png" alt="Analysis tab with orthogonal call graph routing, toggleable edge legend, complexity scoring, and execution trace" width="800">
 </p>
 <p align="center">
-  <img src="docs/screenshots/analysis.png" alt="Analysis tab showing call graph visualization, execution trace, and side-by-side spaghetti vs clean COBOL comparison" width="800">
+  <img src="docs/screenshots/chat.png" alt="LLM chatbot with tool-use cards, prompt chips, and provider switching" width="800">
 </p>
 
 ## Features at a Glance
