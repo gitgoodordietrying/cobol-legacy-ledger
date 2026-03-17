@@ -1,6 +1,15 @@
 # GitHub Linguist overrides
-# Test files are verification infrastructure, not the project's language
+# COBOL is the star — mark supporting infrastructure so Linguist
+# recognizes this as a COBOL project, not a Python project.
+
+# Test files are verification infrastructure
 python/tests/*.py linguist-generated
+
+# API/LLM/codegen/analyzer are infrastructure wrapping the COBOL core
+python/api/*.py linguist-vendored
+python/llm/*.py linguist-vendored
+python/cobol_codegen/*.py linguist-vendored
+python/cobol_analyzer/*.py linguist-vendored
 
 # Generated/config files
 Makefile linguist-generated
