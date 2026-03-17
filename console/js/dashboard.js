@@ -512,15 +512,22 @@ const Dashboard = (() => {
       const result = await ApiClient.post('/api/settlement/verify');
       const intact = result.all_chains_intact;
       const matched = result.all_settlements_matched;
+      const anomalyCount = result.anomalies?.length || 0;
       const type = (intact && matched) ? 'success' : 'danger';
-      const msg = intact && matched
-        ? `All chains intact, ${result.settlements_checked} settlements matched`
-        : `Issues: ${result.anomalies?.length || 0} anomalies detected`;
+      let msg, narrative;
+
       if (intact && matched) {
-        setNarrative('All chains intact. SHA-256 hashes verified across all 6 nodes.', 'success');
+        msg = `All chains intact, ${result.settlements_checked} settlements matched`;
+        narrative = 'All chains intact. SHA-256 hashes verified across all 6 nodes.';
+      } else if (anomalyCount > 100) {
+        // Stale data from prior runs — suggest reset
+        msg = `${anomalyCount} anomalies \u2014 stale data detected. Click Reset to re-seed.`;
+        narrative = `Data is stale from prior runs (${anomalyCount} mismatches). Click Reset to start fresh, then try Corrupt Ledger \u2192 Integrity Check.`;
       } else {
-        setNarrative(`Integrity breach detected \u2014 ${result.anomalies?.length || 0} anomalies found.`, 'danger');
+        msg = `Tamper detected: ${anomalyCount} anomalies found`;
+        narrative = `Integrity breach \u2014 ${anomalyCount} anomalies. The SHA-256 chain caught the modification.`;
       }
+      setNarrative(narrative, type === 'success' ? 'success' : anomalyCount > 100 ? 'warning' : 'danger');
       Utils.showToast(msg, type);
 
       // Add to feed

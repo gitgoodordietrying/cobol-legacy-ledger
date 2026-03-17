@@ -75,24 +75,24 @@
             <button class="btn btn--primary" id="btnStart">Start</button>
             <button class="btn" id="btnPause" disabled>Pause</button>
             <button class="btn btn--danger" id="btnStop" disabled>Stop</button>
-            <button class="btn btn--sm" id="btnReset" title="Re-seed all nodes with fresh demo data">Reset</button>
+            <button class="btn" id="btnReset" title="Re-seed all nodes with fresh demo data">Reset</button>
           </div>
 
           <div class="controls__divider"></div>
 
           <div class="controls__action">
-            <button class="btn btn--warning btn--sm" id="btnTamper" title="Tamper BANK_C balance">Corrupt Ledger</button>
-            <span class="controls__hint">Modify BANK_C balance directly</span>
+            <button class="btn btn--warning" id="btnTamper" title="Directly modify BANK_C's balance in the flat file, bypassing COBOL and the integrity chain">Corrupt Ledger</button>
+            <span class="controls__hint">Step 1: Tamper with data</span>
           </div>
           <div class="controls__action">
-            <button class="btn btn--success btn--sm" id="btnVerify" title="Cross-node verification">Integrity Check</button>
-            <span class="controls__hint">SHA-256 cross-node verification</span>
+            <button class="btn btn--success" id="btnVerify" title="Verify SHA-256 hash chains across all 6 nodes — detects any data that was modified outside of COBOL">Integrity Check</button>
+            <span class="controls__hint">Step 2: Detect the tamper</span>
           </div>
         </div>
 
         <!-- Narrative Banner -->
         <div class="dashboard-grid__narrative" id="narrativeBanner">
-          <span id="narrativeText">Five banks, one clearing house. Hit Start to run a 25-day banking simulation.</span>
+          <span id="narrativeText">Five banks, one clearing house. Hit Start to run a simulation, or try Corrupt Ledger then Integrity Check to see SHA-256 tamper detection in action.</span>
         </div>
 
         <!-- Network Graph -->
