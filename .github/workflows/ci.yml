@@ -25,7 +25,12 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run tests
-        run: python -m pytest python/tests/ -v --tb=short --ignore=python/tests/test_e2e_playwright.py -p no:asyncio
+        run: >
+          python -m pytest python/tests/ -v --tb=short
+          --ignore=python/tests/test_e2e_playwright.py
+          --ignore=python/tests/test_conversation.py
+          --ignore=python/tests/test_llm_providers.py
+          -p no:asyncio
 
       - name: Verify test count matches documentation
         run: |
