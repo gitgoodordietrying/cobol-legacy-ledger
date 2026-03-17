@@ -58,5 +58,14 @@ RUN chmod +x scripts/*.sh
 
 EXPOSE 8000
 
-# Seed demo data and start server
-CMD ["sh", "-c", "python -c 'from python.bridge import COBOLBridge; [COBOLBridge(node=n, data_dir=\"COBOL-BANKING/data\", bin_dir=\"COBOL-BANKING/bin\").seed_demo_data() or COBOLBridge(node=n, data_dir=\"COBOL-BANKING/data\", bin_dir=\"COBOL-BANKING/bin\").close() for n in [\"BANK_A\",\"BANK_B\",\"BANK_C\",\"BANK_D\",\"BANK_E\",\"CLEARING\"]]' && python -m uvicorn python.api.app:app --host 0.0.0.0 --port 8000"]
+# Seed script: populate all 6 nodes with demo data
+RUN echo '#!/usr/bin/env python3\n\
+from python.bridge import COBOLBridge\n\
+for node in ["BANK_A","BANK_B","BANK_C","BANK_D","BANK_E","CLEARING"]:\n\
+    b = COBOLBridge(node=node, data_dir="COBOL-BANKING/data", bin_dir="COBOL-BANKING/bin")\n\
+    b.seed_demo_data()\n\
+    b.close()\n\
+print("Seeded 6 nodes")' > /app/seed.py
+
+# Seed data and start server (PORT env var for Railway compatibility)
+CMD sh -c "python /app/seed.py && python -m uvicorn python.api.app:app --host 0.0.0.0 --port ${PORT:-8000}"
