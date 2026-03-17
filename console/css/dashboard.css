@@ -148,6 +148,11 @@
   gap: 2px;
 }
 
+.controls__action .btn {
+  min-width: 140px;
+  justify-content: center;
+}
+
 .controls__hint {
   font-size: var(--text-2xs);
   color: var(--text-muted);
