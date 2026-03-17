@@ -53,19 +53,21 @@ COPY COBOL-BANKING/ COBOL-BANKING/
 # Copy compiled binaries from builder
 COPY --from=cobol-builder /build/COBOL-BANKING/bin/ COBOL-BANKING/bin/
 
+# Ensure Python can find the application modules
+ENV PYTHONPATH=/app
+# Force Mode B (Python file I/O) — COBOL subprocess paths don't resolve in containers
+ENV FORCE_MODE_B=true
+
+# Create data directories (files excluded by .dockerignore, seeded at startup)
+RUN mkdir -p COBOL-BANKING/data/BANK_A COBOL-BANKING/data/BANK_B \
+    COBOL-BANKING/data/BANK_C COBOL-BANKING/data/BANK_D \
+    COBOL-BANKING/data/BANK_E COBOL-BANKING/data/CLEARING \
+    COBOL-BANKING/payroll/data/PAYROLL
+
 # Seed data on first run
 RUN chmod +x scripts/*.sh
 
 EXPOSE 8000
 
-# Seed script: populate all 6 nodes with demo data
-RUN echo '#!/usr/bin/env python3\n\
-from python.bridge import COBOLBridge\n\
-for node in ["BANK_A","BANK_B","BANK_C","BANK_D","BANK_E","CLEARING"]:\n\
-    b = COBOLBridge(node=node, data_dir="COBOL-BANKING/data", bin_dir="COBOL-BANKING/bin")\n\
-    b.seed_demo_data()\n\
-    b.close()\n\
-print("Seeded 6 nodes")' > /app/seed.py
-
 # Seed data and start server (PORT env var for Railway compatibility)
-CMD sh -c "python /app/seed.py && python -m uvicorn python.api.app:app --host 0.0.0.0 --port ${PORT:-8000}"
+CMD sh -c "python scripts/seed_docker.py && python -m uvicorn python.api.app:app --host 0.0.0.0 --port ${PORT:-8000}"

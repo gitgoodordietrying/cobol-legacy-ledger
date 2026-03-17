@@ -42,7 +42,7 @@ from python.cross_verify import CrossNodeVerifier
 # The 6-node architecture is fixed: 5 banks + 1 clearing house.
 VALID_NODES = {"BANK_A", "BANK_B", "BANK_C", "BANK_D", "BANK_E", "CLEARING"}
 DATA_DIR = os.environ.get("DATA_DIR", "COBOL-BANKING/data")  # Override for tests
-FORCE_MODE_B = False  # Override for tests — skip COBOL binary detection
+FORCE_MODE_B = os.environ.get("FORCE_MODE_B", "").lower() in ("true", "1", "yes")  # env or test override
 
 # ── Singleton State ───────────────────────────────────────────────
 # Lazily initialized on first access. Cleared by test fixtures.

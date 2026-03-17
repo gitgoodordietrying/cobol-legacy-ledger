@@ -1,0 +1,24 @@
+# Exclude local databases — seed_docker.py creates fresh data at startup
+**/*.db
+**/*.db-wal
+**/*.db-shm
+
+# Exclude local DAT files — seed_docker.py creates them at startup
+COBOL-BANKING/data/**/ACCOUNTS.DAT
+COBOL-BANKING/data/**/TRANSACT.DAT
+
+# Compiled binaries — built in the Docker build stage
+COBOL-BANKING/bin/
+
+# Dev/test files not needed in production image
+python/tests/
+screenshots/
+docs/
+.git/
+.github/
+.devcontainer/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+node_modules/
