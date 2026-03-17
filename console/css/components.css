@@ -313,6 +313,11 @@
   padding-right: 28px;
 }
 
+.select option {
+  color: #1a1a2e;
+  background: #ffffff;
+}
+
 /* ── Popup / Modal ───────────────────────────────────────────────── */
 .popup-overlay {
   position: fixed;

@@ -229,9 +229,16 @@ class OllamaProvider(LLMProvider):
                 models = [m["name"] for m in data.get("models", [])]
                 if not models:
                     return False
-                # If configured model isn't available, fall back to first available
+                # If configured model isn't available, fall back to a
+                # tool-capable model.  Small parameter models (≤1B) like
+                # gemma3:1b often lack tool-use support; prefer larger ones.
                 if self.model not in models:
-                    self.model = models[0]
+                    # Prefer models known to support function calling
+                    tool_capable = [
+                        m for m in models
+                        if not m.endswith(":1b") and "1b" not in m.split(":")[0].split("-")
+                    ]
+                    self.model = tool_capable[0] if tool_capable else models[0]
                 return True
         except Exception as exc:
             logger.warning("Ollama check_available failed (%s): %s", self.base_url, exc)

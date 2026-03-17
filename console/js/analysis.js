@@ -72,7 +72,8 @@ const Analysis = (() => {
       const lineCount = source.split('\n').length;
       renderSummary(complexityData, deadCodeData, elapsedMs, lineCount);
 
-      // Populate trace entry point selector
+      // Clear previous traces and populate new entry points
+      clearTraces();
       populateEntryPoints(graphData.paragraphs || []);
 
       // Show analysis grid, hide compare
@@ -124,6 +125,20 @@ const Analysis = (() => {
         <span class="analysis-timer__human">Human estimate: ${humanEstimate}</span>
       </div>
     `;
+  }
+
+  /**
+   * Clear all traces when switching files.
+   */
+  function clearTraces() {
+    // Clear cache
+    Object.keys(traceCache).forEach(k => delete traceCache[k]);
+
+    // Reset execution path container
+    const container = document.getElementById('execPathContainer');
+    if (container) {
+      container.innerHTML = '<span style="color: var(--text-muted); font-size: var(--text-xs);">Select an entry point to trace execution</span>';
+    }
   }
 
   /**
@@ -232,6 +247,7 @@ const Analysis = (() => {
       });
     }
 
+    body.classList.add('exec-path__group-body--open');
     group.appendChild(body);
     container.appendChild(group);
   }
