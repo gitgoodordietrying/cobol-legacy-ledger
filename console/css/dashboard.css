@@ -201,38 +201,35 @@
   color: var(--text-muted);
 }
 
-.cobol-ticker__viewport {
+.cobol-term {
+  flex: 1;
+  overflow-y: auto;
   padding: var(--sp-2) var(--sp-3);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  line-height: 1.6;
+  line-height: 1.5;
   white-space: pre;
   tab-size: 4;
-  min-height: 80px;
-  max-height: 180px;
-  overflow-y: auto;
-  border-bottom: 1px solid var(--glass-border);
-}
-
-.cobol-ticker__log {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--sp-1) var(--sp-3);
   min-height: 0;
 }
 
-.cobol-ticker__log-entry {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  padding: 1px 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.cobol-term__entry {
+  border-left: 2px solid rgba(255, 255, 255, 0.06);
+  padding-left: var(--sp-2);
+  margin-bottom: var(--sp-1);
 }
 
-.cobol-ticker__log-entry--active {
+.cobol-term__header {
+  color: var(--text-accent);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cobol-term__code {
   color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
 }
 
 /* ── COBOL Full-File Modal ──────────────────────────────────────── */

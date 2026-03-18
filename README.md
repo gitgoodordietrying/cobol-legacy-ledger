@@ -15,6 +15,17 @@
 
 This is a fully functional **6-node inter-bank settlement system** in COBOL, wrapped with a Python read/write bridge that adds cryptographic integrity without modifying a single line of legacy code. An AI tutor (Ollama local or Claude cloud) can explain any paragraph, trace execution paths, and compare spaghetti vs clean code side by side. Every source file teaches COBOL syntax, banking concepts, and integration patterns inline.
 
+## At a Glance
+
+**Stack**: COBOL (GnuCOBOL) · Python 3.9+ · FastAPI · SQLite · Vanilla JS · Docker
+
+- **18 COBOL programs** (10 clean + 8 intentional spaghetti) with a Python observation layer — no legacy code modified
+- **SHA-256 hash chain** integrity across 6 independent banking nodes, with live tamper detection in <5ms
+- **800 automated tests** (unit, integration, E2E browser), CI with linting, multi-version Python matrix
+- **AI-powered static analysis** — call graphs, dead code detection, complexity scoring, cross-file dependency mapping
+
+**See it in action**: Run `./scripts/prove.sh` to compile, seed, settle, verify, tamper, and detect — or try the [live demo](https://cobol-legacy-ledger-production.up.railway.app/console/).
+
 ## How to Use This Repository
 
 ### For Students (Self-Study)

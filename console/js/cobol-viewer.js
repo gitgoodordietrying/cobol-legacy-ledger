@@ -1,9 +1,9 @@
 /**
- * cobol-viewer.js -- Live COBOL ticker with full-file modal.
+ * cobol-viewer.js -- Live COBOL terminal stream with full-file modal.
  *
- * Maps transaction types to relevant .cob files and paragraphs. The ticker
- * shows only the active paragraph (~15-30 lines) during simulation. Clicking
- * the file name opens a modal with the full source and paragraph highlighted.
+ * Maps transaction types to relevant .cob files and paragraphs. Every
+ * simulation event appends a header + code snippet to a scrolling terminal.
+ * Clicking the file name opens a modal with the full source highlighted.
  */
 
 const CobolViewer = (() => {
@@ -13,11 +13,7 @@ const CobolViewer = (() => {
   let currentFile = 'SMOKETEST.cob';
   let currentParagraph = null;
   let tickerCount = 0;
-  const MAX_LOG_ENTRIES = 100;
-
-  // Track last rendered file+paragraph to skip redundant viewport updates
-  let _lastRenderedFile = null;
-  let _lastRenderedPara = null;
+  const MAX_ENTRIES = 200;
 
   // Map transaction type → file + paragraph for auto-navigation
   const TX_MAP = {
@@ -122,86 +118,74 @@ const CobolViewer = (() => {
   }
 
   /**
-   * Add a one-line entry to the compact event log.
-   */
-  function addLogEntry(filename, paragraphName) {
-    const logEl = document.getElementById('cobolLog');
-    if (!logEl) return;
-
-    const entry = document.createElement('div');
-    entry.className = 'cobol-ticker__log-entry cobol-ticker__log-entry--active';
-    entry.textContent = `[${tickerCount}] ${filename} \u2192 ${paragraphName || '???'}`;
-    logEl.insertBefore(entry, logEl.firstChild);
-
-    // Remove "active" highlight from the previous entry
-    const prev = entry.nextElementSibling;
-    if (prev) prev.classList.remove('cobol-ticker__log-entry--active');
-
-    // Cap at MAX_LOG_ENTRIES (lightweight — single text nodes)
-    while (logEl.children.length > MAX_LOG_ENTRIES) {
-      logEl.removeChild(logEl.lastChild);
-    }
-  }
-
-  /**
-   * Show a paragraph in the single code viewport. Only re-renders
-   * the viewport when the file+paragraph actually changes. Always
-   * adds a one-line log entry.
+   * Append a code snippet to the scrolling terminal. Every event produces
+   * output — no dedup, no debounce.
    */
   async function showSnippet(filename, paragraphName) {
-    const viewportEl = document.getElementById('cobolViewport');
-    const fileEl = document.getElementById('cobolFileName');
-    const paraEl = document.getElementById('cobolParagraph');
-    const badgeEl = document.getElementById('cobolProgramBadge');
-    if (!viewportEl) return;
+    const termEl = document.getElementById('cobolTerminal');
+    if (!termEl) return;
 
     currentFile = filename;
     currentParagraph = paragraphName;
+    tickerCount++;
 
+    // Update header bar
+    const fileEl = document.getElementById('cobolFileName');
+    const paraEl = document.getElementById('cobolParagraph');
+    const badgeEl = document.getElementById('cobolProgramBadge');
     if (fileEl) fileEl.textContent = filename;
     if (paraEl) paraEl.textContent = paragraphName || '\u2014';
-    tickerCount++;
     if (badgeEl) badgeEl.textContent = `${tickerCount}`;
 
-    // Always add a compact log entry
-    addLogEntry(filename, paragraphName);
-
-    // Skip viewport re-render if same file+paragraph (dedup during bursts)
-    if (filename === _lastRenderedFile && paragraphName === _lastRenderedPara) {
-      return;
-    }
-    _lastRenderedFile = filename;
-    _lastRenderedPara = paragraphName;
+    // Clear placeholder on first event
+    if (tickerCount === 1) termEl.innerHTML = '';
 
     try {
       const source = await fetchFile(filename);
       const lines = source.split('\n');
       const range = findParagraph(lines, paragraphName);
 
+      // Build terminal entry: header + 3-5 lines of code
+      const entry = document.createElement('div');
+      entry.className = 'cobol-term__entry';
+
+      const header = document.createElement('div');
+      header.className = 'cobol-term__header';
+      header.textContent = `[${tickerCount}] ${filename} \u2192 ${paragraphName || '???'}`;
+      entry.appendChild(header);
+
       if (range) {
-        const snippet = lines.slice(range.start, Math.min(range.end, range.start + 12));
-        viewportEl.innerHTML = snippet.map(highlightLine).join('\n');
-      } else {
-        viewportEl.innerHTML = `<span style="color: var(--text-muted)">Paragraph not found: ${Utils.escapeHtml(paragraphName || '')}</span>`;
+        const code = document.createElement('div');
+        code.className = 'cobol-term__code';
+        // Show up to 5 lines starting from paragraph header
+        const snippet = lines.slice(range.start, Math.min(range.end, range.start + 5));
+        code.innerHTML = snippet.map(highlightLine).join('\n');
+        entry.appendChild(code);
       }
+
+      termEl.appendChild(entry);
+
+      // Cap entries for memory
+      while (termEl.children.length > MAX_ENTRIES) {
+        termEl.removeChild(termEl.firstChild);
+      }
+
+      // Auto-scroll to bottom
+      termEl.scrollTop = termEl.scrollHeight;
     } catch {
-      viewportEl.innerHTML = `<span style="color: var(--danger)">Failed to load ${Utils.escapeHtml(filename)}</span>`;
+      // Silent — don't break the stream for fetch errors
     }
   }
 
   /**
-   * Clear viewport and log, reset the ticker counter.
+   * Clear terminal and reset the ticker counter.
    */
   function clearLog() {
-    const viewportEl = document.getElementById('cobolViewport');
-    if (viewportEl) {
-      viewportEl.innerHTML = '<span style="color: var(--text-muted)">Start a simulation to see live COBOL execution</span>';
+    const termEl = document.getElementById('cobolTerminal');
+    if (termEl) {
+      termEl.innerHTML = '<span style="color: var(--text-muted)">Start a simulation to see live COBOL execution</span>';
     }
-    const logEl = document.getElementById('cobolLog');
-    if (logEl) logEl.innerHTML = '';
     tickerCount = 0;
-    _lastRenderedFile = null;
-    _lastRenderedPara = null;
     const badgeEl = document.getElementById('cobolProgramBadge');
     if (badgeEl) badgeEl.textContent = '\u2014';
   }
@@ -267,9 +251,8 @@ const CobolViewer = (() => {
 
   /**
    * Auto-navigate ticker based on a simulation event.
-   * Debounced to 300ms to avoid redundant renders during event bursts.
+   * No debounce — every event renders immediately.
    */
-  let _hlTimer = null;
   function highlightForEvent(event) {
     let mapping = null;
 
@@ -280,8 +263,7 @@ const CobolViewer = (() => {
     }
 
     if (mapping) {
-      clearTimeout(_hlTimer);
-      _hlTimer = setTimeout(() => showSnippet(mapping.file, mapping.para), 300);
+      showSnippet(mapping.file, mapping.para);
     }
   }
 

@@ -6,7 +6,7 @@ Thank you for your interest in contributing! This project is an educational COBO
 
 ```bash
 # Clone and install
-git clone https://github.com/gitgoodordietrying/cobol-legacy-ledger.git
+git clone https://github.com/albertdobmeyer/cobol-legacy-ledger.git
 cd cobol-legacy-ledger
 pip install -e ".[dev]"
 
