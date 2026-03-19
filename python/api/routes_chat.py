@@ -197,12 +197,25 @@ async def switch_provider(req: ProviderSwitchRequest):
     _conversations.clear()  # Invalidate all sessions — new provider, fresh start
 
     available = await _current_provider.check_available()
+
+    # Probe Ollama independently
+    ollama_up = False
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get("http://localhost:11434/api/tags")
+            ollama_up = resp.status_code == 200
+    except Exception:
+        pass
+
     return ProviderStatus(
         provider=req.provider,
         model=_current_provider.model,
         security_level=_current_provider.security_level,
         available=available,
         anthropic_key_set=bool(_anthropic_key or os.environ.get("ANTHROPIC_API_KEY")),
+        ollama_available=ollama_up,
+        user_api_key=bool(_anthropic_key),
     )
 
 
@@ -233,10 +246,23 @@ async def provider_status():
     """Get current LLM provider status and availability."""
     provider = _get_provider()
     available = await provider.check_available()
+
+    # Probe Ollama independently so the UI knows whether to enable the button
+    ollama_up = False
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get("http://localhost:11434/api/tags")
+            ollama_up = resp.status_code == 200
+    except Exception:
+        pass
+
     return ProviderStatus(
         provider=provider.__class__.__name__.replace("Provider", "").lower(),
         model=provider.model,
         security_level=provider.security_level,
         available=available,
         anthropic_key_set=bool(_anthropic_key or os.environ.get("ANTHROPIC_API_KEY")),
+        ollama_available=ollama_up,
+        user_api_key=bool(_anthropic_key),
     )

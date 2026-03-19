@@ -346,7 +346,7 @@ The analysis pipeline provides **structured context** that makes an LLM better a
 
 ## Verification Performance
 
-Cross-node verification of all 6 chains completes in <5ms (typical). This includes:
+Cross-node verification of all 6 chains completes in <100ms (typical). This includes:
 - Walking all hash chains
 - Comparing DAT vs DB balances for 42 accounts
 - Cross-referencing all settlement entries

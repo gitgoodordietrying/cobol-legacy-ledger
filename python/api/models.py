@@ -232,6 +232,8 @@ class ProviderStatus(BaseModel):
     available: bool                # Whether the provider is reachable
     error: Optional[str] = None    # Error message if unavailable
     anthropic_key_set: bool = False  # Whether ANTHROPIC_API_KEY is configured
+    ollama_available: bool = False   # Whether Ollama is reachable (independent check)
+    user_api_key: bool = False       # True if API key came from user input (not env)
 
 
 class ProviderSwitchRequest(BaseModel):

@@ -259,7 +259,7 @@ class AnthropicProvider(LLMProvider):
 
     security_level = "CLOUD"
 
-    DEFAULT_MODEL = "claude-sonnet-4-20250514"
+    DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
     def __init__(self, api_key: str = None, model: str = None):
         """Initialize the Anthropic provider.

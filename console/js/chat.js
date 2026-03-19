@@ -22,7 +22,10 @@ const Chat = (() => {
   ];
 
   let _ollamaModels = [];  // Populated dynamically from /api/chat/models
-  const ANTHROPIC_MODELS = ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'claude-opus-4-20250514'];
+  const ANTHROPIC_MODELS_FULL = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-20250514', 'claude-opus-4-20250514'];
+  const ANTHROPIC_MODELS_LIMITED = ['claude-haiku-4-5-20251001'];  // Env key = haiku only
+  let _userApiKey = false;  // True if user provided their own key
+  let _ollamaAvailable = false;  // True if Ollama is reachable
 
   /**
    * Initialize chat bindings.
@@ -54,6 +57,23 @@ const Chat = (() => {
     document.getElementById('modelSelect')?.addEventListener('change', () => {
       const provider = document.getElementById('providerName')?.textContent?.split('/')[0] || 'ollama';
       switchProvider(provider);
+    });
+
+    // API key input — when user pastes a key and presses Enter, auto-switch to Anthropic
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    apiKeyInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && apiKeyInput.value.trim()) {
+        e.preventDefault();
+        switchProvider('anthropic');
+      }
+    });
+    // Also enable the Anthropic button when user types a key
+    apiKeyInput?.addEventListener('input', () => {
+      const btnAnthropic = document.getElementById('btnAnthropic');
+      if (btnAnthropic && apiKeyInput.value.trim()) {
+        btnAnthropic.disabled = false;
+        btnAnthropic.title = 'Switch to Anthropic Claude (your API key)';
+      }
     });
 
     // New chat
@@ -312,12 +332,12 @@ const Chat = (() => {
       if (modelSelect?.value) body.model = modelSelect.value;
       if (apiKeyInput?.value && provider === 'anthropic') {
         body.api_key = apiKeyInput.value;
+        _userApiKey = true;  // User provided their own key — unlock all models
       }
 
       await ApiClient.post('/api/provider/switch', body);
       Utils.showToast(`Switched to ${provider}`, 'success');
       refreshProviderStatus();
-      updateModelOptions(provider);
     } catch (err) {
       Utils.showToast(err.message, 'danger');
     }
@@ -325,18 +345,49 @@ const Chat = (() => {
 
   /**
    * Update model dropdown options based on current provider.
+   * Anthropic with env key = haiku only. User's own key = all models.
    */
   function updateModelOptions(provider) {
     const select = document.getElementById('modelSelect');
     if (!select) return;
-    const models = provider === 'anthropic' ? ANTHROPIC_MODELS : _ollamaModels;
+    let models;
+    if (provider === 'anthropic') {
+      models = _userApiKey ? ANTHROPIC_MODELS_FULL : ANTHROPIC_MODELS_LIMITED;
+    } else {
+      models = _ollamaModels;
+    }
     select.innerHTML = '';
     models.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m;
-      opt.textContent = m;
+      // Friendly display names
+      opt.textContent = m.replace('claude-haiku-4-5-20251001', 'Haiku 4.5')
+                         .replace('claude-sonnet-4-20250514', 'Sonnet 4')
+                         .replace('claude-opus-4-20250514', 'Opus 4');
       select.appendChild(opt);
     });
+  }
+
+  /**
+   * Update provider button states based on availability.
+   */
+  function updateProviderButtons(status) {
+    const btnOllama = document.getElementById('btnOllama');
+    const btnAnthropic = document.getElementById('btnAnthropic');
+
+    if (btnOllama) {
+      btnOllama.disabled = !status.ollama_available;
+      btnOllama.title = status.ollama_available
+        ? 'Switch to local Ollama'
+        : 'Ollama not detected — install and start Ollama locally';
+    }
+
+    if (btnAnthropic) {
+      btnAnthropic.disabled = !status.anthropic_key_set;
+      btnAnthropic.title = status.anthropic_key_set
+        ? 'Switch to Anthropic Claude'
+        : 'No API key — paste your key below to enable';
+    }
   }
 
   /**
@@ -365,26 +416,50 @@ const Chat = (() => {
       const nameEl = document.getElementById('providerName');
       const dotEl = document.getElementById('providerDot');
       const apiKeyInput = document.getElementById('apiKeyInput');
-      if (nameEl) nameEl.textContent = `${status.provider}/${status.model}`;
+
+      // Track state from backend
+      _userApiKey = status.user_api_key || false;
+      _ollamaAvailable = status.ollama_available || false;
+
+      // Display current provider + friendly model name
+      const friendlyModel = status.model
+        .replace('claude-haiku-4-5-20251001', 'Haiku 4.5')
+        .replace('claude-sonnet-4-20250514', 'Sonnet 4')
+        .replace('claude-opus-4-20250514', 'Opus 4');
+      if (nameEl) nameEl.textContent = `${status.provider}/${friendlyModel}`;
       if (dotEl) {
         dotEl.classList.remove('health-dot--ok', 'health-dot--error');
         dotEl.classList.add(status.available ? 'health-dot--ok' : 'health-dot--error');
       }
-      // Show API key status — if server has key from env, show placeholder
-      if (apiKeyInput && status.anthropic_key_set && !apiKeyInput.value) {
-        apiKeyInput.placeholder = 'API key configured';
-        apiKeyInput.disabled = true;
+
+      // API key input: disabled if env key is set and user hasn't entered their own
+      if (apiKeyInput) {
+        if (status.anthropic_key_set && !status.user_api_key && !apiKeyInput.value) {
+          apiKeyInput.placeholder = 'API key configured (Haiku only)';
+          apiKeyInput.disabled = true;
+        } else if (!status.anthropic_key_set) {
+          apiKeyInput.placeholder = 'sk-ant-... (paste to enable Anthropic)';
+          apiKeyInput.disabled = false;
+        }
       }
+
+      // Update button states
+      updateProviderButtons(status);
+
       // Auto-switch to Anthropic if key is pre-configured and Ollama is unavailable
-      if (status.anthropic_key_set && !status.available && status.provider === 'ollama') {
+      if (status.anthropic_key_set && !status.available && status.provider === 'ollama' && !status.ollama_available) {
         switchProvider('anthropic');
         return;
       }
+
       // Fetch dynamic Ollama model list
-      try {
-        const models = await ApiClient.get('/api/chat/models');
-        if (Array.isArray(models) && models.length) _ollamaModels = models;
-      } catch { /* models endpoint unavailable */ }
+      if (status.ollama_available) {
+        try {
+          const models = await ApiClient.get('/api/chat/models');
+          if (Array.isArray(models) && models.length) _ollamaModels = models;
+        } catch { /* models endpoint unavailable */ }
+      }
+
       // Update model dropdown to match current provider
       updateModelOptions(status.provider);
       const modelSelect = document.getElementById('modelSelect');

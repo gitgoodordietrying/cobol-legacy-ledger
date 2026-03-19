@@ -20,7 +20,7 @@ This is a fully functional **6-node inter-bank settlement system** in COBOL, wra
 **Stack**: COBOL (GnuCOBOL) · Python 3.9+ · FastAPI · SQLite · Vanilla JS · Docker
 
 - **18 COBOL programs** (10 clean + 8 intentional spaghetti) with a Python observation layer — no legacy code modified
-- **SHA-256 hash chain** integrity across 6 independent banking nodes, with live tamper detection in <5ms
+- **SHA-256 hash chain** integrity across 6 independent banking nodes, with live tamper detection in <100ms
 - **807 automated tests** (unit, integration, E2E browser), CI with linting, multi-version Python matrix
 - **AI-powered static analysis** — call graphs, dead code detection, complexity scoring, cross-file dependency mapping
 
@@ -89,7 +89,7 @@ The proof script runs the full system lifecycle:
 3. **Settles** an inter-bank transfer: Alice@BANK_A pays Bob@BANK_B $2,500 through the clearing house
 4. **Verifies** all SHA-256 hash chains intact across the network
 5. **Tampers** one bank's ledger directly (bypassing COBOL and the integrity chain)
-6. **Detects** the tamper in <5ms via balance reconciliation
+6. **Detects** the tamper in <100ms via balance reconciliation
 
 GnuCOBOL is optional — the system falls back to Python-only mode if `cobc` isn't installed.
 
@@ -113,7 +113,7 @@ The **web console** at `http://localhost:8000/console/` provides:
 - **18 production COBOL programs** — 10 clean banking + 8 intentional spaghetti spanning 1974-2012
 - **800 automated tests** — unit, integration, E2E browser (Playwright)
 - **Real-time 6-node banking simulation** via Server-Sent Events
-- **SHA-256 tamper detection** in <5ms across all nodes
+- **SHA-256 tamper detection** in <100ms across all nodes
 - **AI-powered COBOL tutor** (Ollama local / Claude cloud) with 19 RBAC-gated analysis tools
 - **Spaghetti archaeology** — GO TO networks, ALTER state machines, 6-level nested IF, Y2K dead code
 - **Cross-file dependency analysis** with shared copybook detection

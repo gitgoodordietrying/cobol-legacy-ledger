@@ -275,9 +275,9 @@ class TestProviderSwitching:
         assert p.model == "llama3.1"
 
     def test_anthropic_default_model(self):
-        """Anthropic default model is claude-sonnet-4-20250514."""
+        """Anthropic default model is claude-haiku-4-5-20251001."""
         p = AnthropicProvider(api_key="test")
-        assert p.model == "claude-sonnet-4-20250514"
+        assert p.model == "claude-haiku-4-5-20251001"
 
 
 # ── Normalize Messages ────────────────────────────────────────────

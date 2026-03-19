@@ -40,7 +40,7 @@ You seed the network with 42 accounts across 6 nodes -- over $100 million in bal
 
 Then you corrupt a ledger. One click. The system reaches into BANK_C's flat file and changes an account balance directly -- bypassing COBOL, bypassing the bridge, bypassing the hash chain. This is the scenario that keeps bank auditors up at night: someone with file-level access edits a number.
 
-You hit "Integrity Check" again. In under 5 milliseconds, the system flags the exact account, the exact discrepancy, the exact node. The DAT file says $999,999.99. The last verified snapshot says $150,000.00. Tamper detected.
+You hit "Integrity Check" again. In under 100 milliseconds, the system flags the exact account, the exact discrepancy, the exact node. The DAT file says $999,999.99. The last verified snapshot says $150,000.00. Tamper detected.
 
 That is the argument made tangible. The COBOL code did not change. The COBOL code did not need to change. What changed is that now you can *see*.
 
@@ -59,7 +59,7 @@ The static analysis pipeline can parse these programs and produce structured res
 - **Complexity scoring** weights each paragraph by anti-pattern density (ALTER scores +10, GO TO scores +5, each nesting level +1)
 - **Cross-file dependency analysis** traces CALL and COPY relationships across the full codebase
 
-The analysis tab in the web console renders these as interactive visualizations -- directed graphs for call flow, side-by-side comparison of spaghetti versus clean implementations, and execution traces that follow the actual runtime path through a GO TO maze. A timer at the bottom reads: "Analyzed in 47ms. Human estimate: 3-5 days."
+The analysis tab in the web console renders these as interactive visualizations -- directed graphs for call flow, side-by-side comparison of spaghetti versus clean implementations, and execution traces that follow the actual runtime path through a GO TO maze. A timer at the bottom reads something like: "Analyzed in 12ms. Human estimate: 2 days."
 
 The point is not that AI replaces the COBOL specialist. The point is that deterministic tools can handle the mechanical work -- tracing branches, counting nesting levels, mapping dependencies -- so the human can focus on understanding *intent*.
 
