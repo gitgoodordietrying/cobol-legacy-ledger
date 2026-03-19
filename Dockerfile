@@ -36,9 +36,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install runtime COBOL dependencies
+# Stage 1 compiles with gnucobol4 which links against libcob5 (not libcob4)
+COPY --from=cobol-builder /usr/lib/x86_64-linux-gnu/libcob*.so* /usr/lib/x86_64-linux-gnu/
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcob4 \
-    && rm -rf /var/lib/apt/lists/*
+    libgmp10 libncurses6 libdb5.3 libxml2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ldconfig
 
 # Install Python dependencies
 COPY python/requirements.txt .
@@ -55,6 +58,8 @@ COPY --from=cobol-builder /build/COBOL-BANKING/bin/ COBOL-BANKING/bin/
 
 # Ensure Python can find the application modules
 ENV PYTHONPATH=/app
+# Ensure COBOL binaries can find libcob at runtime
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
 
 # Create data directories (files excluded by .dockerignore, seeded at startup)
 RUN mkdir -p COBOL-BANKING/data/BANK_A COBOL-BANKING/data/BANK_B \

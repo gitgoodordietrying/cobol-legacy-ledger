@@ -29,7 +29,8 @@ if bin_path.exists():
         if result.returncode == 0:
             print("  COBOL self-test passed - using Mode A (real COBOL)")
         else:
-            raise RuntimeError(f"exit code {result.returncode}")
+            stderr = result.stderr.decode("utf-8", errors="replace").strip() if result.stderr else ""
+            raise RuntimeError(f"exit code {result.returncode}: {stderr}")
     except Exception as e:
         print(f"  COBOL self-test failed ({e}) - falling back to Mode B")
         os.environ["FORCE_MODE_B"] = "true"

@@ -338,6 +338,31 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.exec-path__step:hover {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.exec-path__step--active {
+  border-color: var(--text-accent);
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--text-accent);
+  font-weight: 600;
+}
+
+/* Loading indicator for auto-trace */
+.exec-path__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-style: italic;
 }
 
 .exec-path__arrow {
@@ -347,6 +372,7 @@
 
 .exec-path__arrow--GOTO { color: var(--danger); }
 .exec-path__arrow--ALTER { color: #f59e0b; }
+.exec-path__arrow--ALTER_GOTO { color: #f59e0b; }
 .exec-path__arrow--FALL_THROUGH { color: var(--text-muted); }
 .exec-path__arrow--PERFORM { color: var(--success); }
 

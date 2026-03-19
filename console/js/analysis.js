@@ -5,6 +5,11 @@
  * components. Fetches COBOL source from /cobol-source/ and sends it to
  * the /api/analysis/ endpoints for call graph, complexity, dead code,
  * and comparison rendering.
+ *
+ * After analysis, ALL paragraph traces are fetched in parallel and
+ * displayed as collapsed groups in the Execution Trace panel. The user
+ * can click any node in the call graph or any step in a trace chain to
+ * cross-highlight between the two panels.
  */
 
 const Analysis = (() => {
@@ -74,15 +79,62 @@ const Analysis = (() => {
 
       // Clear previous traces and populate new entry points
       clearTraces();
-      populateEntryPoints(graphData.paragraphs || []);
+      const paragraphs = graphData.paragraphs || [];
+      populateEntryPoints(paragraphs);
 
       // Show analysis grid, hide compare
       document.getElementById('analysisGrid').style.display = '';
       document.getElementById('compareCard').style.display = 'none';
 
       Utils.showToast(`${filename}: ${complexityData.rating} (score ${complexityData.total_score})`, 'success');
+
+      // Auto-fetch ALL traces in parallel (non-blocking)
+      autoFetchAllTraces(source, paragraphs);
     } catch (e) {
       Utils.showToast(`Analysis failed: ${e.message}`, 'danger');
+    }
+  }
+
+  /**
+   * Auto-fetch traces for all paragraphs in parallel after analysis.
+   * Results are displayed as collapsed groups in the trace panel.
+   */
+  async function autoFetchAllTraces(source, paragraphs) {
+    if (paragraphs.length === 0) return;
+
+    const container = document.getElementById('execPathContainer');
+    if (!container) return;
+
+    // Show loading indicator
+    container.innerHTML = '<span class="exec-path__loading">Tracing all entry points\u2026</span>';
+
+    // Fire all trace requests in parallel (batched for large files)
+    const results = await Promise.allSettled(
+      paragraphs.map(name =>
+        ApiClient.post('/api/analysis/trace', {
+          source_text: source,
+          entry_point: name,
+          max_steps: 100,
+        }).then(data => ({ name, path: data.execution_path || [] }))
+      )
+    );
+
+    // Clear loading indicator
+    container.innerHTML = '';
+
+    // Process results in paragraph order
+    let rendered = 0;
+    results.forEach(result => {
+      if (result.status === 'fulfilled') {
+        const { name, path } = result.value;
+        traceCache[name] = path;
+        appendTraceGroup(name, path, false);  // collapsed by default
+        rendered++;
+      }
+    });
+
+    if (rendered === 0) {
+      container.innerHTML = '<span style="color: var(--text-muted); font-size: var(--text-xs);">No traces available</span>';
     }
   }
 
@@ -137,7 +189,7 @@ const Analysis = (() => {
     // Reset execution path container
     const container = document.getElementById('execPathContainer');
     if (container) {
-      container.innerHTML = '<span style="color: var(--text-muted); font-size: var(--text-xs);">Select an entry point to trace execution</span>';
+      container.innerHTML = '<span style="color: var(--text-muted); font-size: var(--text-xs);">Click Analyze to trace all execution paths</span>';
     }
   }
 
@@ -167,18 +219,17 @@ const Analysis = (() => {
     if (!entry) return;
 
     // Sync dropdown
-    if (entrySelect && !overrideEntry) {
-      // Normal flow from dropdown
-    } else if (entrySelect) {
+    if (entrySelect) {
       entrySelect.value = entry;
     }
 
-    // Check cache first
+    // If already in cache (and therefore already rendered), just highlight
     if (traceCache[entry]) {
       highlightTraceGroup(entry);
       return;
     }
 
+    // Otherwise fetch and append (fallback for edge cases)
     const fileSelect = document.getElementById('analysisFileSelect');
     const source = await fetchSource(fileSelect.value);
     if (!source) return;
@@ -192,7 +243,7 @@ const Analysis = (() => {
 
       const path = data.execution_path || [];
       traceCache[entry] = path;
-      appendTraceGroup(entry, path);
+      appendTraceGroup(entry, path, true);
       highlightTraceGroup(entry);
     } catch (e) {
       Utils.showToast(`Trace failed: ${e.message}`, 'danger');
@@ -201,13 +252,16 @@ const Analysis = (() => {
 
   /**
    * Append a collapsible trace group to the execution path container.
+   * @param {string} entry - paragraph name (entry point)
+   * @param {Array} path - execution path steps
+   * @param {boolean} startOpen - whether the body starts expanded
    */
-  function appendTraceGroup(entry, path) {
+  function appendTraceGroup(entry, path, startOpen) {
     const container = document.getElementById('execPathContainer');
     if (!container) return;
 
-    // Remove the placeholder text if present
-    const placeholder = container.querySelector('span[style]');
+    // Remove placeholder text if present
+    const placeholder = container.querySelector('span[style], .exec-path__loading');
     if (placeholder) placeholder.remove();
 
     const group = document.createElement('div');
@@ -234,26 +288,40 @@ const Analysis = (() => {
         if (i > 0) {
           const arrow = document.createElement('span');
           const via = step.via || 'sequential';
-          arrow.className = `exec-path__arrow exec-path__arrow--${via}`;
-          arrow.textContent = via === 'GOTO' ? '\u2192\u2192' : via === 'ALTER\u2192GOTO' ? '\u21D2' : '\u2192';
+          // Normalize ALTER→GOTO to ALTER_GOTO for CSS class compatibility
+          const viaCls = via.replace('\u2192', '_');
+          arrow.className = `exec-path__arrow exec-path__arrow--${viaCls}`;
+          arrow.textContent = via === 'GOTO' ? '\u2192\u2192' : via.includes('ALTER') ? '\u21D2' : '\u2192';
           arrow.title = via;
           body.appendChild(arrow);
         }
         const stepEl = document.createElement('span');
         stepEl.className = 'exec-path__step';
         stepEl.textContent = step.paragraph;
+        stepEl.dataset.paragraph = step.paragraph;
         if (step.note) stepEl.title = step.note;
+
+        // Click a step to select that node in the call graph
+        stepEl.addEventListener('click', () => {
+          CallGraphView.setSelectedNode(step.paragraph);
+          highlightStepInTraces(step.paragraph);
+          // Sync dropdown
+          const sel = document.getElementById('traceEntrySelect');
+          if (sel) sel.value = step.paragraph;
+        });
+
         body.appendChild(stepEl);
       });
     }
 
-    body.classList.add('exec-path__group-body--open');
+    if (startOpen) body.classList.add('exec-path__group-body--open');
     group.appendChild(body);
     container.appendChild(group);
   }
 
   /**
    * Highlight the trace group for the given entry point.
+   * Expands the group and scrolls it into view.
    */
   function highlightTraceGroup(entry) {
     const container = document.getElementById('execPathContainer');
@@ -263,40 +331,38 @@ const Analysis = (() => {
       g.classList.remove('exec-path__group--active');
       if (g.dataset.entry === entry) {
         g.classList.add('exec-path__group--active');
+        // Auto-expand when highlighted
+        const body = g.querySelector('.exec-path__group-body');
+        if (body) body.classList.add('exec-path__group-body--open');
         g.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     });
+
+    // Also highlight the step matching this entry in all groups
+    highlightStepInTraces(entry);
   }
 
   /**
-   * Render the execution path as a visual chain of steps (legacy single-trace).
+   * Highlight all occurrences of a paragraph name across all trace groups.
+   * This provides bi-directional feedback: clicking a node or step shows
+   * where that paragraph appears in every trace chain.
    */
-  function renderExecPath(path) {
+  function highlightStepInTraces(paragraphName) {
     const container = document.getElementById('execPathContainer');
     if (!container) return;
-    container.innerHTML = '';
 
-    if (path.length === 0) {
-      container.innerHTML = '<span style="color: var(--text-muted); font-size: var(--text-xs);">No execution path</span>';
-      return;
-    }
+    // Clear previous step highlights
+    container.querySelectorAll('.exec-path__step--active').forEach(s => {
+      s.classList.remove('exec-path__step--active');
+    });
 
-    path.forEach((step, i) => {
-      // Arrow between steps
-      if (i > 0) {
-        const arrow = document.createElement('span');
-        const via = step.via || 'sequential';
-        arrow.className = `exec-path__arrow exec-path__arrow--${via}`;
-        arrow.textContent = via === 'GOTO' ? '\u2192\u2192' : via === 'ALTER\u2192GOTO' ? '\u21D2' : '\u2192';
-        arrow.title = via;
-        container.appendChild(arrow);
+    if (!paragraphName) return;
+
+    // Highlight all steps matching this paragraph
+    container.querySelectorAll('.exec-path__step').forEach(s => {
+      if (s.dataset.paragraph === paragraphName) {
+        s.classList.add('exec-path__step--active');
       }
-
-      const stepEl = document.createElement('span');
-      stepEl.className = 'exec-path__step';
-      stepEl.textContent = step.paragraph;
-      if (step.note) stepEl.title = step.note;
-      container.appendChild(stepEl);
     });
   }
 
