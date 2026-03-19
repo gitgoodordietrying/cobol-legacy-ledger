@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>COBOL Legacy Ledger</title>
+  <meta name="description" content="Learn COBOL through a live banking system. Run simulations, corrupt ledgers, catch fraud with SHA-256 hash chains, and explore spaghetti code with AI-powered static analysis.">
+  <meta property="og:title" content="COBOL Legacy Ledger">
+  <meta property="og:description" content="I built a COBOL banking system to prove legacy code isn't the problem. Lack of observability is.">
+  <meta property="og:type" content="website">
+  <style>
+    :root {
+      --bg: #0f1729;
+      --surface: #1a2332;
+      --border: #2a3a4e;
+      --text: #e2e8f0;
+      --text-muted: #8892a4;
+      --accent: #60a5fa;
+      --accent-hover: #93c5fd;
+      --danger: #f87171;
+      --success: #4ade80;
+      --font: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+      --max-width: 760px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.7;
+      font-size: 17px;
+    }
+
+    /* Header */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 1.5rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    header a { color: var(--text); text-decoration: none; font-weight: 600; font-size: 1.1rem; }
+    header nav { display: flex; gap: 1.5rem; }
+    header nav a { color: var(--text-muted); font-size: 0.9rem; font-weight: 400; }
+    header nav a:hover { color: var(--accent); }
+
+    /* Article */
+    article {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 3rem 2rem 4rem;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      line-height: 1.2;
+      margin-bottom: 1.5rem;
+      color: #fff;
+    }
+
+    h2 {
+      font-size: 1.4rem;
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+      color: #fff;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.3rem;
+    }
+
+    p { margin-bottom: 1rem; }
+
+    strong { color: #fff; }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+    code {
+      background: var(--surface);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+    }
+
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.2rem;
+      overflow-x: auto;
+      margin: 1.2rem 0;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.85em;
+      line-height: 1.6;
+    }
+
+    img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin: 1.5rem 0;
+    }
+
+    ul, ol {
+      margin: 1rem 0;
+      padding-left: 1.5rem;
+    }
+
+    li { margin-bottom: 0.4rem; }
+
+    blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 1rem;
+      color: var(--text-muted);
+      margin: 1.5rem 0;
+      font-style: italic;
+    }
+
+    /* Video */
+    .video-wrap {
+      margin: 2rem 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .video-wrap video {
+      width: 100%;
+      display: block;
+    }
+
+    /* CTA */
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--accent);
+      color: var(--bg);
+      padding: 0.7rem 1.4rem;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-decoration: none;
+      margin-top: 0.5rem;
+    }
+
+    .cta:hover { background: var(--accent-hover); text-decoration: none; color: var(--bg); }
+
+    .cta-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; }
+
+    .cta--outline {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+
+    .cta--outline:hover {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 1.6rem; }
+      article { padding: 2rem 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="./">COBOL Legacy Ledger</a>
+    <nav>
+      <a href="https://cobol-legacy-ledger-production.up.railway.app/console/">Live Demo</a>
+      <a href="https://github.com/albertdobmeyer/cobol-legacy-ledger">GitHub</a>
+    </nav>
+  </header>
+
+  <article id="blog">
+    <!-- Content is rendered from blog.md by the build step, or just inline it. -->
+    <!-- For GitHub Pages with Jekyll, we'd use layouts. For simplicity, inline. -->
+  </article>
+
+  <footer>
+    MIT License. Built by <a href="https://github.com/albertdobmeyer">Albert Dobmeyer</a>.
+  </footer>
+
+  <!-- Markdown rendering: fetch blog.md and render inline -->
+  <script>
+    (async () => {
+      const article = document.getElementById('blog');
+      try {
+        const resp = await fetch('blog.md');
+        if (!resp.ok) throw new Error(resp.status);
+        let md = await resp.text();
+
+        // Minimal markdown-to-HTML (no library dependency)
+        // For production, use a proper renderer. This handles the basics.
+        md = md
+          // Code blocks
+          .replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
+            `<pre><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;').trim()}</code></pre>`)
+          // Images
+          .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy">')
+          // Bold
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          // Italic
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          // Inline code
+          .replace(/`([^`]+)`/g, '<code>$1</code>')
+          // Links
+          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+          // H2
+          .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+          // H1
+          .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+          // Unordered lists
+          .replace(/^- (.+)$/gm, '<li>$1</li>')
+          // Paragraphs (lines not already tagged)
+          .replace(/^(?!<[hluop]|<li|<pre|<img)(.+)$/gm, '<p>$1</p>')
+          // Wrap consecutive <li> in <ul>
+          .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+        // Insert demo video after the first image
+        const videoHtml = `
+          <div class="video-wrap">
+            <video controls preload="metadata" poster="screenshots/01-dashboard-idle.png">
+              <source src="video/demo.webm" type="video/webm">
+              Your browser does not support video playback.
+            </video>
+          </div>`;
+        const firstImgEnd = md.indexOf('</img>') > -1 ? md.indexOf('</img>') : md.indexOf('loading="lazy">') + 'loading="lazy">'.length;
+        if (firstImgEnd > 0) {
+          md = md.slice(0, firstImgEnd) + videoHtml + md.slice(firstImgEnd);
+        }
+
+        // Add CTA buttons at the end
+        md += `
+          <div class="cta-row">
+            <a class="cta" href="https://cobol-legacy-ledger-production.up.railway.app/console/">Try the Live Demo</a>
+            <a class="cta cta--outline" href="https://github.com/albertdobmeyer/cobol-legacy-ledger">View on GitHub</a>
+          </div>`;
+
+        article.innerHTML = md;
+      } catch (e) {
+        article.innerHTML = '<p>Failed to load blog content. <a href="blog.md">Read the raw markdown</a>.</p>';
+      }
+    })();
+  </script>
+
+</body>
+</html>
