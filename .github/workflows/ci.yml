@@ -55,7 +55,7 @@ jobs:
         run: |
           COUNT=$(python -m pytest python/tests/ --collect-only -q --ignore=python/tests/test_e2e_playwright.py 2>/dev/null | tail -1 | grep -oP '^\d+')
           echo "Tests collected: $COUNT"
-          if [ "$COUNT" -lt 700 ]; then
-            echo "ERROR: Expected at least 700 tests, got $COUNT"
+          if [ "$COUNT" -lt 730 ]; then
+            echo "ERROR: Expected at least 730 tests, got $COUNT"
             exit 1
           fi

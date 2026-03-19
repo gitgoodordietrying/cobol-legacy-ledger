@@ -21,7 +21,7 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 3. **Per-Node Database** — Each node has its own SQLite DB. No shared ledger.
 4. **6-Node Architecture** — Fixed: BANK_A, BANK_B, BANK_C, BANK_D, BANK_E, CLEARING.
 5. **Production COBOL** — Headers + KNOWN_ISSUES.md documentation required.
-6. **Testability** — Every requirement must be testable. 800 tests, all green.
+6. **Testability** — Every requirement must be testable. 807 tests, all green.
 7. **No Node.js** — Static HTML/CSS/JS only. No npm, no build process. Web console served via FastAPI StaticFiles at `/console/`.
 8. **Clear Error Paths** — Status codes: 00=success, 01=NSF, 02=limit, 03=invalid, 04=frozen, 99=error.
 9. **Educational Comments** — Every source file teaches concepts inline with `COBOL CONCEPT:` blocks. Layer 3 (API/LLM) files follow the same standard: 20-40 line module docstrings, `# ── Title ─────────` section banners, class/method docstrings, and inline comments on non-obvious lines.
@@ -120,7 +120,7 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 - `python/cobol_analyzer/complexity.py` — Per-paragraph complexity scoring
 - `python/cobol_analyzer/cross_file.py` — Multi-file CALL/COPY dependency analysis
 - `python/cobol_analyzer/knowledge_base.py` — COBOL pattern encyclopedia (~20 entries)
-- `python/tests/` — 800 tests across 28 test files
+- `python/tests/` — 807 tests across 28 test files
 
 ### Web Console (static HTML/CSS/JS, no Node.js)
 
@@ -203,7 +203,7 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 ## Verification
 
 ```bash
-# Run all 800 tests (or: make test)
+# Run all 807 tests (or: make test)
 python -m pytest python/tests/ -v --ignore=python/tests/test_e2e_playwright.py
 
 # Full end-to-end proof (or: make prove)

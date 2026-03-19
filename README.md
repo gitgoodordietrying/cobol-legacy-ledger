@@ -310,7 +310,7 @@ python/                  Python observation layer — commented for integration 
     complexity.py        Per-paragraph complexity scoring
     knowledge_base.py    COBOL pattern encyclopedia (~20 entries)
     cross_file.py        Multi-file CALL/COPY dependency analysis
-  tests/                 800 tests (726 unit + 74 E2E) — all green
+  tests/                 807 tests (733 unit + 74 E2E) — all green
 
 console/                 Web dashboard + chatbot UI (static HTML/CSS/JS)
   index.html             SPA shell — nav tabs, role selector, health dot
@@ -382,13 +382,13 @@ These are defined in `COBOL-BANKING/copybooks/COMCODE.cpy` and shared across all
 ## Running Tests
 
 ```bash
-# Unit tests (598 tests)
+# Unit tests (733 tests)
 python -m pytest python/tests/ -v --ignore=python/tests/test_e2e_playwright.py
 
 # E2E tests (74 tests, requires running server + Playwright)
 python -m pytest python/tests/test_e2e_playwright.py -v
 
-# All 800 tests
+# All 807 tests
 python -m pytest python/tests/ -v
 
 # Or via Makefile

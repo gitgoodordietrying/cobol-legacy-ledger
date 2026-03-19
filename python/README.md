@@ -45,7 +45,7 @@ uvicorn python.api.app:app --reload
 ### Tests
 
 ```bash
-python -m pytest python/tests/ -v    # 800 tests, all green
+python -m pytest python/tests/ -v    # 807 tests, all green
 ```
 
 ## Architecture

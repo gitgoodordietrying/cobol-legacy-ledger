@@ -19,7 +19,7 @@ DOCKER_PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -W 2>/dev/null || cygpath -w "$
 # echo "DEBUG: DOCKER_PROJECT_ROOT=$DOCKER_PROJECT_ROOT"
 
 IMAGE_NAME="cobol-dev"
-DOCKERFILE_PATH="$PROJECT_ROOT/Dockerfile.cobol"
+DOCKERFILE_PATH="$PROJECT_ROOT/Dockerfile"
 
 # Check if image exists; build if missing
 if ! docker image inspect "$IMAGE_NAME" &> /dev/null; then
