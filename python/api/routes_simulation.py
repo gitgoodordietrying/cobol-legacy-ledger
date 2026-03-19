@@ -170,6 +170,14 @@ def reset_simulation(auth: AuthContext = Depends(get_auth)):
         _engine._stopped = True
     if _thread is not None and _thread.is_alive():
         _thread.join(timeout=5)
+
+    # Close the engine's coordinator bridges (hold SQLite connections)
+    if _engine is not None:
+        for bridge in _engine.coordinator.nodes.values():
+            try:
+                bridge.close()
+            except Exception:
+                pass
     _engine = None
     _thread = None
 
@@ -182,7 +190,9 @@ def reset_simulation(auth: AuthContext = Depends(get_auth)):
             pass
     _bridges.clear()
 
-    # Delete SQLite databases so chains and transactions are wiped clean
+    # Delete SQLite databases so chains and transactions are wiped clean.
+    # Catch OSError (not just FileNotFoundError) because Windows holds file
+    # locks on SQLite WAL/SHM files briefly after connections close.
     import os
     nodes = ['BANK_A', 'BANK_B', 'BANK_C', 'BANK_D', 'BANK_E', 'CLEARING']
     for node in nodes:
@@ -190,7 +200,7 @@ def reset_simulation(auth: AuthContext = Depends(get_auth)):
         for suffix in ['', '-wal', '-shm']:
             try:
                 os.remove(db_path + suffix)
-            except FileNotFoundError:
+            except OSError:
                 pass
 
     # Clear cached coordinator/verifier so they reconnect to fresh DBs
