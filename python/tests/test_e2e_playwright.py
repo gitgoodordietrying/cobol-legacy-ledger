@@ -413,37 +413,55 @@ class TestTamperAndVerify:
 # ── COBOL Viewer ─────────────────────────────────────────────────
 
 class TestCobolViewer:
-    """Test COBOL source viewer functionality."""
+    """Test COBOL terminal viewer functionality."""
 
-    def test_default_file_loads(self, dash: Page):
-        """showSnippet loads SMOKETEST.cob into the ticker."""
-        dash.evaluate("CobolViewer.showSnippet('SMOKETEST.cob', null)")
+    def test_terminal_shows_event(self, dash: Page):
+        """highlightForEvent appends a formatted line to the terminal."""
+        dash.evaluate("""CobolViewer.highlightForEvent({
+            type: 'deposit', bank: 'BANK_A', account: 'ACT-A-001',
+            amount: 1500.00, status: '00', timestamp: '2025-01-01T14:30:00'
+        })""")
         dash.wait_for_function(
-            "document.querySelector('#cobolTerminal').textContent.length > 50",
+            "document.querySelector('#cobolTerminal div') !== null",
             timeout=5000,
         )
         content = dash.locator("#cobolTerminal").text_content()
-        assert "IDENTIFICATION" in content or "DIVISION" in content or "PROGRAM-ID" in content
+        assert "BANK_A" in content
+        assert "$1500.00" in content
+        assert "OK" in content
 
-    def test_switch_to_transact(self, dash: Page):
-        """showSnippet switches ticker to TRANSACT.cob."""
-        dash.evaluate("CobolViewer.showSnippet('TRANSACT.cob', 'PROCESS-DEPOSIT')")
+    def test_terminal_shows_failed_event(self, dash: Page):
+        """Failed events display FAIL status."""
+        dash.evaluate("""CobolViewer.highlightForEvent({
+            type: 'withdraw', bank: 'BANK_B', account: 'ACT-B-001',
+            amount: 999.00, status: '01', timestamp: '2025-01-01T15:00:00'
+        })""")
         dash.wait_for_function(
-            "document.querySelector('#cobolTerminal').textContent.length > 50",
+            "document.querySelector('#cobolTerminal div') !== null",
             timeout=5000,
         )
         content = dash.locator("#cobolTerminal").text_content()
-        assert "DEPOSIT" in content or "TRANSACT" in content
+        assert "FAIL" in content
 
-    def test_switch_to_settle(self, dash: Page):
-        """showSnippet switches ticker to SETTLE.cob."""
-        dash.evaluate("CobolViewer.showSnippet('SETTLE.cob', 'EXECUTE-SETTLEMENT')")
+    def test_terminal_caps_at_200_lines(self, dash: Page):
+        """Terminal caps entries at MAX_LINES (200)."""
+        dash.evaluate("""
+            for (let i = 0; i < 210; i++) {
+                CobolViewer.highlightForEvent({
+                    type: 'deposit', bank: 'BANK_A', account: 'ACT-A-001',
+                    amount: i, status: '00', timestamp: '2025-01-01T00:00:00'
+                });
+            }
+        """)
+        # Wait for rAF flush
         dash.wait_for_function(
-            "document.querySelector('#cobolTerminal').textContent.length > 50",
+            "document.querySelector('#cobolTerminal').children.length > 0",
             timeout=5000,
         )
-        content = dash.locator("#cobolTerminal").text_content()
-        assert "SETTLE" in content or "SETTLEMENT" in content
+        # Give rAF time to flush
+        dash.evaluate("new Promise(r => requestAnimationFrame(r))")
+        count = dash.evaluate("document.querySelector('#cobolTerminal').children.length")
+        assert count <= 200, f"Expected <= 200 lines, got {count}"
 
     def test_all_ten_files_in_selector(self, dash: Page):
         """File selector has all 10 COBOL source files."""
@@ -451,16 +469,18 @@ class TestCobolViewer:
         count = options.count()
         assert count == 10, f"Expected 10 COBOL files, got {count}"
 
-    def test_syntax_highlighting_present(self, dash: Page):
-        """COBOL viewer applies syntax highlighting spans."""
-        dash.evaluate("CobolViewer.showSnippet('SMOKETEST.cob', null)")
+    def test_badge_updates(self, dash: Page):
+        """Badge counter increments with events."""
+        dash.evaluate("""CobolViewer.highlightForEvent({
+            type: 'deposit', bank: 'BANK_A', account: 'ACT-A-001',
+            amount: 100, status: '00', timestamp: '2025-01-01T00:00:00'
+        })""")
         dash.wait_for_function(
-            "document.querySelector('#cobolTerminal').textContent.length > 50",
+            "document.querySelector('#cobolProgramBadge').textContent !== '\u2014'",
             timeout=5000,
         )
-        # Syntax highlighter wraps keywords in spans
-        spans = dash.locator("#cobolTerminal span")
-        assert spans.count() > 0, "Expected syntax highlighting spans"
+        badge = dash.locator("#cobolProgramBadge").text_content()
+        assert badge == "1"
 
 
 # ── Node Interaction ─────────────────────────────────────────────
@@ -925,24 +945,24 @@ class TestTeacherCobolExploration:
         # All three should be distinct
         assert len(set(contents)) == 3, "Expected three distinct COBOL programs"
 
-    def test_paragraph_navigator_highlights_code(self, dash: Page):
-        """showSnippet highlights PROCESS-DEPOSIT in TRANSACT.cob ticker."""
-        dash.evaluate("CobolViewer.showSnippet('TRANSACT.cob', 'PROCESS-DEPOSIT')")
+    def test_browse_source_opens_modal(self, dash: Page):
+        """Clicking Browse Source opens the COBOL modal with highlighted source."""
+        dash.locator("#cobolFileName").click()
         dash.wait_for_function(
-            "document.querySelector('#cobolTerminal').textContent.length > 50",
+            "document.querySelector('#cobolModal').style.display === 'flex'",
             timeout=5000,
         )
-        # Paragraph indicator should show the target paragraph
-        para_text = dash.locator("#cobolParagraph").text_content()
-        assert "PROCESS-DEPOSIT" in para_text, \
-            f"Expected PROCESS-DEPOSIT in paragraph indicator, got: {para_text}"
-        # Highlight spans should exist in the ticker
-        highlights = dash.locator("#cobolTerminal .cobol-highlight")
-        assert highlights.count() > 0, "Expected highlighted spans in COBOL ticker"
-        # File name should reflect TRANSACT.cob
-        file_text = dash.locator("#cobolFileName").text_content()
-        assert "TRANSACT.cob" in file_text, \
-            f"Expected TRANSACT.cob in file name, got: {file_text}"
+        # Modal should show COBOL source with syntax highlighting
+        dash.wait_for_function(
+            "document.querySelector('#cobolModalSource').textContent.length > 50",
+            timeout=5000,
+        )
+        content = dash.locator("#cobolModalSource").text_content()
+        assert "IDENTIFICATION" in content or "PROGRAM-ID" in content, \
+            f"Expected COBOL source in modal, got: {content[:200]}"
+        # Syntax highlighting spans should exist
+        spans = dash.locator("#cobolModalSource span")
+        assert spans.count() > 0, "Expected syntax highlighting spans in modal"
 
 
 # ── Teacher Persona: Spaghetti Analysis ──────────────────────────

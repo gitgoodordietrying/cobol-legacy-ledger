@@ -190,17 +190,6 @@
   color: #93c5fd;
 }
 
-.cobol-ticker__sep {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.cobol-ticker__para {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
 .cobol-term {
   flex: 1;
   overflow-y: auto;

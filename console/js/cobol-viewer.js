@@ -1,42 +1,31 @@
 /**
- * cobol-viewer.js -- Live COBOL terminal stream with full-file modal.
+ * cobol-viewer.js -- Live COBOL execution terminal + full-file modal.
  *
- * Maps transaction types to relevant .cob files and paragraphs. Every
- * simulation event appends a header + code snippet to a scrolling terminal.
- * Clicking the file name opens a modal with the full source highlighted.
+ * The terminal is a plain-text append-only log of simulation events,
+ * batched via requestAnimationFrame to avoid browser crashes at high
+ * event rates. No per-event syntax highlighting or source fetching.
+ *
+ * The modal (opened on click) still fetches and highlights full COBOL
+ * source files using a single pre-compiled regex — called only on
+ * user interaction, never on the hot path.
  */
 
 const CobolViewer = (() => {
 
-  // Cache of loaded source files
+  // ── Terminal state ──────────────────────────────────────────────
+  const MAX_LINES = 200;
+  let lineCount = 0;
+  let buffer = [];         // Lines queued between animation frames
+  let rafPending = false;
+
+  // ── Modal state ─────────────────────────────────────────────────
   const fileCache = {};
   let currentFile = 'SMOKETEST.cob';
-  let currentParagraph = null;
-  let tickerCount = 0;
-  const MAX_ENTRIES = 200;
 
-  // Map transaction type → file + paragraph for auto-navigation
-  const TX_MAP = {
-    deposit:   { file: 'TRANSACT.cob', para: 'PROCESS-DEPOSIT' },
-    withdraw:  { file: 'TRANSACT.cob', para: 'PROCESS-WITHDRAW' },
-    transfer:  { file: 'TRANSACT.cob', para: 'PROCESS-TRANSFER' },
-    external:  { file: 'SETTLE.cob',   para: 'PROCESS-SETTLEMENT' },
-    interest:  { file: 'INTEREST.cob', para: 'CALCULATE-INTEREST' },
-    fee:       { file: 'FEES.cob',     para: 'ASSESS-FEES' },
-  };
-
-  // Scenario event → file mapping
-  const SCENARIO_MAP = {
-    FREEZE_ACCOUNT:   { file: 'ACCOUNTS.cob', para: 'UPDATE-ACCOUNT' },
-    CLOSE_ACCOUNT:    { file: 'ACCOUNTS.cob', para: 'CLOSE-ACCOUNT' },
-    TAMPER_BALANCE:   { file: 'RECONCILE.cob', para: 'CHECK-ACCOUNT-BALANCE' },
-    LARGE_TRANSFER:   { file: 'SETTLE.cob', para: 'PROCESS-SETTLEMENT' },
-    DRAIN_TRANSFERS:  { file: 'TRANSACT.cob', para: 'PROCESS-TRANSFER' },
-    SUSPICIOUS_BURST: { file: 'TRANSACT.cob', para: 'PROCESS-DEPOSIT' },
-  };
-
-  // COBOL keywords for syntax highlighting
-  const KEYWORDS = new Set([
+  // ── Syntax highlighting (modal only) ────────────────────────────
+  // Pre-compiled combined regex — one pass instead of 63 individual
+  // replacements. Only used when the user opens the source modal.
+  const KEYWORDS = [
     'ACCEPT', 'ADD', 'ALTER', 'CALL', 'CLOSE', 'COMPUTE', 'CONTINUE',
     'DELETE', 'DISPLAY', 'DIVIDE', 'EVALUATE', 'EXIT', 'GO', 'GOBACK',
     'IF', 'INITIALIZE', 'INSPECT', 'MOVE', 'MULTIPLY', 'OPEN', 'PERFORM',
@@ -54,37 +43,139 @@ const CobolViewer = (() => {
     'SELECT', 'ASSIGN', 'ORGANIZATION', 'ACCESS', 'MODE', 'STATUS',
     'SEQUENTIAL', 'LINE', 'ADVANCING', 'WITH', 'TEST',
     'TRUE', 'FALSE', 'SPACES', 'ZEROS', 'ZEROES', 'HIGH-VALUES', 'LOW-VALUES',
+    'IDENTIFICATION', 'ENVIRONMENT', 'DATA', 'PROCEDURE', 'DIVISION',
+  ];
+
+  const COBOL_KW_RE = new RegExp('\\b(' + KEYWORDS.join('|') + ')\\b', 'g');
+  const DIVISIONS_SET = new Set([
+    'IDENTIFICATION', 'ENVIRONMENT', 'DATA', 'PROCEDURE', 'DIVISION',
   ]);
 
-  const DIVISIONS = ['IDENTIFICATION', 'ENVIRONMENT', 'DATA', 'PROCEDURE', 'DIVISION'];
-
   /**
-   * Apply basic syntax highlighting to a single line of COBOL.
+   * Apply syntax highlighting to a single line (modal only).
+   * One regex pass instead of 63 individual replacements.
    */
   function highlightLine(line) {
+    // Comment lines (column 7 = '*')
     if (line.length >= 7 && line[6] === '*') {
       return `<span class="cobol-cmt">${Utils.escapeHtml(line)}</span>`;
     }
 
     let html = Utils.escapeHtml(line);
 
+    // String literals
     html = html.replace(/(&quot;[^&]*&quot;|&#39;[^&]*&#39;|"[^"]*"|'[^']*')/g,
       '<span class="cobol-str">$1</span>');
 
+    // Numeric literals
     html = html.replace(/\b(\d+\.?\d*)\b/g, '<span class="cobol-num">$1</span>');
 
-    DIVISIONS.forEach(d => {
-      const re = new RegExp(`\\b(${d})\\b`, 'g');
-      html = html.replace(re, '<span class="cobol-div">$1</span>');
-    });
-
-    KEYWORDS.forEach(kw => {
-      const re = new RegExp(`\\b(${kw})\\b`, 'g');
-      html = html.replace(re, '<span class="cobol-kw">$1</span>');
+    // Keywords + divisions in one pass
+    html = html.replace(COBOL_KW_RE, (match) => {
+      const cls = DIVISIONS_SET.has(match) ? 'cobol-div' : 'cobol-kw';
+      return `<span class="${cls}">${match}</span>`;
     });
 
     return html;
   }
+
+  // ── Terminal: format + flush ────────────────────────────────────
+
+  /**
+   * Format a simulation event into a fixed-width terminal line.
+   */
+  function formatEvent(event) {
+    const time = event.timestamp ? event.timestamp.slice(11, 16) : '--:--';
+    const bank = (event.bank || '???').padEnd(7);
+    const type = (event.type || '???').toUpperCase().slice(0, 3).padEnd(3);
+    const acct = (event.account || '').padEnd(10);
+    const amt = event.amount != null ? `$${event.amount.toFixed(2)}` : '';
+    const ok = event.status === '00' || event.status === 'COMPLETED';
+    const status = ok ? 'OK' : 'FAIL';
+    return { text: `${time}  ${bank}  ${type}  ${acct}  ${amt.padStart(12)}  ${status}`, ok };
+  }
+
+  /**
+   * Flush buffered lines to the DOM in a single reflow.
+   * Called once per animation frame at most.
+   */
+  function flush() {
+    rafPending = false;
+    const termEl = document.getElementById('cobolTerminal');
+    if (!termEl || buffer.length === 0) return;
+
+    // Cap buffer before touching DOM — discard oldest if more events
+    // arrived between frames than we can display
+    if (buffer.length > MAX_LINES) {
+      buffer = buffer.slice(-MAX_LINES);
+    }
+
+    // Build a fragment with buffered lines
+    const frag = document.createDocumentFragment();
+    for (const entry of buffer) {
+      const div = document.createElement('div');
+      div.textContent = entry.text;
+      if (!entry.ok) div.style.color = 'var(--danger)';
+      frag.appendChild(div);
+    }
+    buffer = [];
+    termEl.appendChild(frag);
+
+    // Trim excess from the front
+    const overflow = termEl.children.length - MAX_LINES;
+    if (overflow > 0) {
+      for (let i = 0; i < overflow; i++) {
+        termEl.removeChild(termEl.firstChild);
+      }
+    }
+
+    // Auto-scroll
+    termEl.scrollTop = termEl.scrollHeight;
+
+    // Update badge
+    const badge = document.getElementById('cobolProgramBadge');
+    if (badge) badge.textContent = lineCount;
+  }
+
+  /**
+   * Queue an event for display. Called on every SSE event — the actual
+   * DOM work is deferred to the next animation frame via flush().
+   */
+  function highlightForEvent(event) {
+    // Skip day_end summary events (no transaction data)
+    if (event.type === 'day_end') return;
+
+    lineCount++;
+
+    // Clear placeholder on first real event
+    if (lineCount === 1) {
+      const termEl = document.getElementById('cobolTerminal');
+      if (termEl) termEl.innerHTML = '';
+    }
+
+    buffer.push(formatEvent(event));
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(flush);
+    }
+  }
+
+  /**
+   * Clear terminal and reset counter.
+   */
+  function clearLog() {
+    const termEl = document.getElementById('cobolTerminal');
+    if (termEl) {
+      termEl.innerHTML = '<span style="color: var(--text-muted)">Start a simulation to see live COBOL execution</span>';
+    }
+    lineCount = 0;
+    buffer = [];
+    rafPending = false;
+    const badge = document.getElementById('cobolProgramBadge');
+    if (badge) badge.textContent = '\u2014';
+  }
+
+  // ── Modal: fetch + display full source ──────────────────────────
 
   /**
    * Fetch and cache a COBOL source file.
@@ -99,128 +190,16 @@ const CobolViewer = (() => {
   }
 
   /**
-   * Find the start and end line indices of a paragraph in COBOL source.
-   * Returns { start, end } or null if not found.
+   * Show a full COBOL file in the modal with syntax highlighting.
    */
-  function findParagraph(lines, paragraphName) {
-    if (!paragraphName) return null;
-    let paraStart = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
-      if (trimmed.startsWith(paragraphName + '.') || trimmed === paragraphName + '.') {
-        paraStart = i;
-      } else if (paraStart >= 0 && /^[A-Z][A-Z0-9-]*\.\s*$/.test(trimmed)) {
-        return { start: paraStart, end: i };
-      }
-    }
-    if (paraStart >= 0) return { start: paraStart, end: lines.length };
-    return null;
-  }
-
-  /**
-   * Append a code snippet to the scrolling terminal. Every event produces
-   * output — no dedup, no debounce.
-   */
-  async function showSnippet(filename, paragraphName) {
-    const termEl = document.getElementById('cobolTerminal');
-    if (!termEl) return;
-
-    currentFile = filename;
-    currentParagraph = paragraphName;
-    tickerCount++;
-
-    // Update header bar
-    const fileEl = document.getElementById('cobolFileName');
-    const paraEl = document.getElementById('cobolParagraph');
-    const badgeEl = document.getElementById('cobolProgramBadge');
-    if (fileEl) fileEl.textContent = filename;
-    if (paraEl) paraEl.textContent = paragraphName || '\u2014';
-    if (badgeEl) badgeEl.textContent = `${tickerCount}`;
-
-    // Clear placeholder on first event
-    if (tickerCount === 1) termEl.innerHTML = '';
-
-    try {
-      const source = await fetchFile(filename);
-      const lines = source.split('\n');
-      const range = findParagraph(lines, paragraphName);
-
-      // Build terminal entry: header + 3-5 lines of code
-      const entry = document.createElement('div');
-      entry.className = 'cobol-term__entry';
-
-      const header = document.createElement('div');
-      header.className = 'cobol-term__header';
-      header.textContent = `[${tickerCount}] ${filename} \u2192 ${paragraphName || '???'}`;
-      entry.appendChild(header);
-
-      if (range) {
-        const code = document.createElement('div');
-        code.className = 'cobol-term__code';
-        // Show up to 5 lines starting from paragraph header
-        const snippet = lines.slice(range.start, Math.min(range.end, range.start + 5));
-        code.innerHTML = snippet.map(highlightLine).join('\n');
-        entry.appendChild(code);
-      }
-
-      termEl.appendChild(entry);
-
-      // Cap entries for memory
-      while (termEl.children.length > MAX_ENTRIES) {
-        termEl.removeChild(termEl.firstChild);
-      }
-
-      // Auto-scroll to bottom
-      termEl.scrollTop = termEl.scrollHeight;
-    } catch {
-      // Silent — don't break the stream for fetch errors
-    }
-  }
-
-  /**
-   * Clear terminal and reset the ticker counter.
-   */
-  function clearLog() {
-    const termEl = document.getElementById('cobolTerminal');
-    if (termEl) {
-      termEl.innerHTML = '<span style="color: var(--text-muted)">Start a simulation to see live COBOL execution</span>';
-    }
-    tickerCount = 0;
-    const badgeEl = document.getElementById('cobolProgramBadge');
-    if (badgeEl) badgeEl.textContent = '\u2014';
-  }
-
-  /**
-   * Show a full COBOL file in the modal with optional paragraph highlighted.
-   */
-  async function showFullFile(filename, paragraphName) {
+  async function showFullFile(filename) {
     const sourceEl = document.getElementById('cobolModalSource');
     if (!sourceEl) return;
 
     try {
       const source = await fetchFile(filename);
       const lines = source.split('\n');
-      const range = findParagraph(lines, paragraphName);
-
-      const html = lines.map((line, i) => {
-        const highlighted = highlightLine(line);
-        if (range && i >= range.start && i < range.end) {
-          return `<span class="cobol-highlight">${highlighted}</span>`;
-        }
-        return highlighted;
-      }).join('\n');
-
-      sourceEl.innerHTML = html;
-
-      // Auto-scroll to highlighted paragraph
-      if (range) {
-        requestAnimationFrame(() => {
-          const highlightEl = sourceEl.querySelector('.cobol-highlight');
-          if (highlightEl) {
-            highlightEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
-        });
-      }
+      sourceEl.innerHTML = lines.map(highlightLine).join('\n');
     } catch {
       sourceEl.innerHTML = `<span style="color: var(--danger)">Failed to load ${Utils.escapeHtml(filename)}</span>`;
     }
@@ -229,16 +208,17 @@ const CobolViewer = (() => {
   /**
    * Open the full-file modal.
    */
-  function openModal(filename, paragraphName) {
+  function openModal(filename) {
     const modal = document.getElementById('cobolModal');
     const title = document.getElementById('cobolModalTitle');
     const select = document.getElementById('cobolFileSelect');
     if (!modal) return;
 
+    currentFile = filename;
     if (title) title.textContent = filename;
     if (select) select.value = filename;
     modal.style.display = 'flex';
-    showFullFile(filename, paragraphName);
+    showFullFile(filename);
   }
 
   /**
@@ -250,30 +230,12 @@ const CobolViewer = (() => {
   }
 
   /**
-   * Auto-navigate ticker based on a simulation event.
-   * No debounce — every event renders immediately.
-   */
-  function highlightForEvent(event) {
-    let mapping = null;
-
-    if (event.type === 'scenario' && event.event_type) {
-      mapping = SCENARIO_MAP[event.event_type];
-    } else if (event.type) {
-      mapping = TX_MAP[event.type];
-    }
-
-    if (mapping) {
-      showSnippet(mapping.file, mapping.para);
-    }
-  }
-
-  /**
-   * Initialize: wire up file name click, modal controls.
+   * Initialize: wire up file name click and modal controls.
    */
   function init() {
-    // File name click → open modal
+    // "Browse Source" click → open modal
     document.getElementById('cobolFileName')?.addEventListener('click', () => {
-      openModal(currentFile, currentParagraph);
+      openModal(currentFile);
     });
 
     // Modal close button
@@ -284,12 +246,20 @@ const CobolViewer = (() => {
       if (e.target.id === 'cobolModal') closeModal();
     });
 
+    // Escape key closes modal
+    document.getElementById('cobolModal')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
     // Modal file selector
     const select = document.getElementById('cobolFileSelect');
     if (select) {
-      select.addEventListener('change', () => showFullFile(select.value, null));
+      select.addEventListener('change', () => {
+        currentFile = select.value;
+        showFullFile(select.value);
+      });
     }
   }
 
-  return { init, highlightForEvent, showSnippet, clearLog };
+  return { init, highlightForEvent, clearLog };
 })();
