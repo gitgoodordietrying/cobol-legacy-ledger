@@ -239,3 +239,18 @@ A: The system works without COBOL installed. build.sh skips compilation, seed.sh
 
 **Q: Why per-node databases?**
 A: Financial systems are distributed. Each node operates independently. Per-node isolation mirrors real banking — distributed, independent, reconciled through settlement.
+
+---
+
+## Active Development: Overhaul Roadmap
+
+The project is in **spec-writing phase** for a major overhaul. See `docs/OVERHAUL_ROADMAP.md` for the full vision and `docs/archive/OVERHAUL_HANDOFF.md` for detailed technical findings.
+
+**5 workstreams** (speckit specs in `specs/`):
+1. Spaghetti Enrichment — practitioner anti-patterns into payroll programs
+2. Chat → Slide-Out Panel — context-aware Socratic tutor across all tabs
+3. Analysis Tab Overhaul — surface rich backend data (explain-paragraph, data-flow, trace)
+4. COBOL Mainframe Dashboard — virtual dry-erase board with real `cobc` compilation
+5. Polish & Historical Enrichment — fun facts, tooltips, arcade easter egg
+
+**Workflow**: Follow speckit (specify → clarify → plan → tasks → build). One spec per workstream. See `docs/archive/SPECKIT.md`.
