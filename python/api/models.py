@@ -200,11 +200,20 @@ class CodegenValidateResponse(BaseModel):
 # Request/response schemas for the LLM chat endpoint and provider management.
 # These wrap the ConversationManager's dict-based results as typed models.
 
+class ChatContext(BaseModel):
+    """Optional context from the UI — which tab and selection is active."""
+    tab: str = "dashboard"                          # Active tab: dashboard, analysis, mainframe
+    selected_file: Optional[str] = None             # e.g., "PAYROLL.cob"
+    selected_paragraph: Optional[str] = None        # e.g., "P-030"
+    selected_node: Optional[str] = None             # e.g., "BANK_A"
+
+
 class ChatRequest(BaseModel):
     """Request body for POST /api/chat."""
     message: str = Field(..., min_length=1)         # User message (cannot be empty)
     session_id: Optional[str] = None                # Reuse existing session, or None for new
     mode: str = Field("direct", description="Chat mode: 'direct' or 'tutor' (Socratic)")  # Tutor mode asks questions
+    context: Optional[ChatContext] = None            # Tab + selection context from UI
 
 
 class ToolCallInfo(BaseModel):

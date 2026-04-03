@@ -165,6 +165,11 @@ const NetworkGraph = (() => {
         if (typeof Dashboard !== 'undefined' && Dashboard.showNodeDetail) {
           Dashboard.showNodeDetail(node);
         }
+        if (typeof EventBus !== 'undefined') {
+          EventBus.emit('selection.changed', {
+            type: 'node', id: node, context: { tab: 'dashboard' }
+          });
+        }
       });
 
       nodesGroup.appendChild(g);

@@ -270,7 +270,24 @@ const Analysis = (() => {
 
     const header = document.createElement('div');
     header.className = 'exec-path__group-header';
-    header.textContent = `\u25B6 ${entry} (${path.length} steps)`;
+    header.innerHTML = `<span>\u25B6 ${Utils.escapeHtml(entry)} (${path.length} steps)</span>`;
+
+    // "Ask about this" link → Chat tab with paragraph context
+    const askLink = document.createElement('button');
+    askLink.className = 'btn btn--xs btn--outline exec-path__ask-link';
+    askLink.textContent = 'Ask \u2192';
+    askLink.title = `Ask about ${entry} in Chat`;
+    askLink.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const file = document.getElementById('analysisFileSelect')?.value || '';
+      if (typeof Chat !== 'undefined') {
+        Chat.setContext('analysis', { type: 'paragraph', id: entry, context: { file } });
+        Chat.prefillAndFocus(`Explain what ${entry} does in ${file}`);
+      }
+      if (typeof App !== 'undefined') App.switchView('chat');
+    });
+    header.appendChild(askLink);
+
     header.addEventListener('click', () => {
       body.classList.toggle('exec-path__group-body--open');
       highlightTraceGroup(entry);
@@ -418,12 +435,27 @@ const Analysis = (() => {
       document.getElementById('analysisGrid').style.display = '';
     });
 
+    // Emit selection.changed when file dropdown changes
+    document.getElementById('analysisFileSelect')?.addEventListener('change', (e) => {
+      if (typeof EventBus !== 'undefined') {
+        EventBus.emit('selection.changed', {
+          type: 'file', id: e.target.value, context: { tab: 'analysis' }
+        });
+      }
+    });
+
     // Click-to-trace: listen for cg-node-click events on the call graph container
     document.getElementById('callGraphContainer')?.addEventListener('cg-node-click', (e) => {
       const paragraph = e.detail?.paragraph;
       if (paragraph) {
         traceFromEntry(paragraph);
         CallGraphView.setSelectedNode(paragraph);
+        if (typeof EventBus !== 'undefined') {
+          EventBus.emit('selection.changed', {
+            type: 'paragraph', id: paragraph,
+            context: { tab: 'analysis', file: document.getElementById('analysisFileSelect')?.value }
+          });
+        }
       }
     });
   }

@@ -3,6 +3,30 @@
    tool call cards, input bar, typing indicator.
    ────────────────────────────────────────────────────────────────── */
 
+/* ── Context Bar ─────────────────────────────────────────────────── */
+.chat-context-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  background: rgba(59, 130, 246, 0.06);
+  border-bottom: 1px solid var(--glass-border);
+  font-size: var(--text-xs);
+  min-height: 24px;
+}
+
+.chat-context-bar__label {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chat-context-bar__badge {
+  color: var(--text-accent);
+  font-family: var(--font-mono);
+}
+
 /* ── Sidebar ─────────────────────────────────────────────────────── */
 .chat-sidebar {
   background: var(--bg-surface);

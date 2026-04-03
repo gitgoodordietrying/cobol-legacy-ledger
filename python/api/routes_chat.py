@@ -135,7 +135,10 @@ async def chat(req: ChatRequest, auth: AuthContext = Depends(get_auth)):
 
     conversation = _get_conversation(auth)
     try:
-        result = await conversation.chat(req.message, session_id=req.session_id, mode=req.mode)
+        context = req.context.model_dump() if req.context else None
+        result = await conversation.chat(
+            req.message, session_id=req.session_id, mode=req.mode, context=context
+        )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 

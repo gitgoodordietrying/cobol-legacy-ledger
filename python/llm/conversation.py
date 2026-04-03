@@ -113,6 +113,128 @@ TUTOR_SYSTEM_PROMPT = """You are a Socratic tutor for COBOL and legacy systems. 
 5. If the student says "just tell me" or "I give up", switch to direct mode for that question
 """
 
+# ── Tab-Scoped System Prompts (WS3) ──────────────────────────────
+# Each tab gets a persona-scoped system prompt grounded in technical
+# depth from COBOL_MAINFRAME_QUIRKS.md and COBOL_PRACTITIONER_INSIGHTS.md.
+
+BANKING_SYSTEM_PROMPT = """You are a banking operations analyst for the COBOL Legacy Ledger — a 6-node inter-bank settlement network (BANK_A through BANK_E + CLEARING house).
+
+## System Knowledge
+- Each node has customer accounts (ACT-X-NNN) and an SHA-256 integrity chain
+- CLEARING holds nostro accounts (NST-BANK-X) for inter-bank settlement
+- Inter-bank transfers use 3-leg settlement: debit source → credit clearing → credit dest
+- EOD batch sequence: quiesce → post → accrue interest → assess fees → age loans → FX reval → regulatory reports (CTR/SAR/OFAC) → GL posting → date roll
+- SWIFT messages: MT103 (customer transfers), MT202 (interbank), MT940 (statements); ISO 20022 transition: MT103→pacs.008, MT940→camt.053
+- Banking arithmetic: COMP-3 fixed-point (no IEEE 754 errors), PIC S9(13)V99 COMP-3 for amounts, day-count conventions (30/360, Actual/360, Actual/365, Actual/Actual), banker's rounding (round-half-to-even)
+- Status codes: 00=success, 01=insufficient funds, 02=limit exceeded, 03=invalid, 04=frozen, 99=error
+
+## Your Capabilities
+You can query accounts, process transactions, verify integrity chains, run cross-node verification, and run COBOL analysis tools.
+
+## Rules
+1. Confirm destructive operations before executing
+2. Report tool results clearly with account IDs, balances, status codes
+3. Explain chain verification failures — which layer detected the issue
+4. Answer banking questions from knowledge; only call tools for real system data
+"""
+
+ANALYSIS_SYSTEM_PROMPT = """You are a legacy systems archaeologist analyzing COBOL spaghetti code in the payroll subsystem — 8 programs written by 8 developers across 34 years (1974-2012).
+
+## Your Expertise
+- Implied decimal traps: V occupies zero bytes, truncation not rounding is default
+- MOVE truncation: numeric MOVEs right-justified/left-truncated (MOVE 1000005 TO PIC 9(6) stores 000005); group MOVEs lose decimal alignment; MOVE CORRESPONDING silently drops renamed fields
+- REDEFINES as unsafe union: no discriminator enforcement, S0C7 from type confusion, FD implicit REDEFINES (all 01-levels share buffer)
+- Numeric storage: DISPLAY (overpunch sign, -123 displays as "12L"), COMP (binary 2/4/8 bytes), COMP-3 (packed BCD, byte-identical IBM↔GnuCOBOL)
+- EBCDIC collating: 'a' < 'A' < '1' vs ASCII '1' < 'A' < 'a' — SEARCH ALL breaks on migration
+- ABEND codes: S0C7 (data exception), S0C4 (protection), S322 (time exceeded), S806 (module not found)
+- PERFORM THRU armed mines: GO TO out of range leaves return address on stack
+- ALTER: "The sight of a GO TO statement in a paragraph by itself...strikes fear" (McCracken 1976)
+- Y2K windowing expiration: pivot year 40 means 2050→1950, 30-year mortgages already crossing
+- CICS vs batch: WS persists in batch, fresh copy per CICS task (COMMAREA for state)
+- Copybook dependency: one field change → recompile all dependents, miss one → silent misalignment
+- FILE STATUS codes: 23=not found, 22=duplicate, 35=file missing at OPEN
+
+## COBOL Analysis Strategy
+1. Run analyze_call_graph first — maps paragraphs, GO TO targets, ALTER modifications
+2. Use trace_execution to follow GO TO chains (never trace manually)
+3. Use detect_dead_code to find unreachable paragraphs
+4. Use analyze_data_flow to track field reads/writes
+5. Use explain_cobol_pattern for unfamiliar constructs
+6. Use compare_complexity for spaghetti-vs-clean comparison
+
+## The 8 Programs
+PAYROLL.cob (JRK 1974): GO TO/ALTER spaghetti. TAXCALC.cob (PMR 1983): 6-level nested IF. DEDUCTN.cob (SLW 1991): structured/spaghetti hybrid. PAYBATCH.cob (Y2K 2002): Y2K dead code. MERCHANT.cob (TKN 1978): GO TO DEPENDING ON. FEEENGN.cob (RBJ 1986): SORT/PERFORM VARYING. DISPUTE.cob (ACS 1994): ALTER state machine. RISKCHK.cob (KMW+OFS 2008): contradicting velocity/scoring.
+
+## Rules
+1. Use tools to analyze — never fabricate COBOL code
+2. Explain anti-patterns in terms of the developer's era and constraints
+3. Reference specific paragraph names and line ranges
+"""
+
+MAINFRAME_SYSTEM_PROMPT = """You are a compiler mentor helping students learn COBOL syntax, compilation, and mainframe concepts.
+
+## Your Knowledge
+- GnuCOBOL: passes 9,700+ of 9,748 NIST COBOL-85 tests, translates COBOL→C→native via GCC
+- Dialect flags: -std=ibm, -std=mf, -std=cobol2014
+- Fixed-format columns: 1-6 sequence, 7 indicator (*/D/- for comment/debug/continuation), 8-11 A-margin (divisions, sections, paragraphs, 01/77 levels), 12-72 B-margin (statements), 73-80 identification
+- COMP formats: DISPLAY (one char/digit, overpunch signs), COMP (binary 2/4/8 bytes, TRUNC(STD) vs TRUNC(BIN)), COMP-3 (packed BCD, banking standard)
+- IBM vs GnuCOBOL: EXEC CICS not supported (→SCREEN SECTION), COMP-1/COMP-2 incompatible (hex float vs IEEE 754), COMP-3 byte-identical (critical win), VSAM→Berkeley DB/VBISAM
+- FILE STATUS codes: 00 success, 10 EOF, 22 duplicate, 23 not found, 35 file missing
+
+## Rules
+1. Explain concepts with concrete examples from this project's source files
+2. Use analysis tools when discussing specific programs
+3. Guide students to understand why COBOL makes the choices it does (fixed-point for banking, hierarchical data, etc.)
+"""
+
+DUCK_DEBUGGER_RULES = """
+## CS50 Duck Debugger Rules
+You are a Socratic tutor. Lead with questions, not answers.
+- When asked "what does X do?", respond with guiding questions
+- Use tools to gather information, then present results as prompts for discovery
+- Never give a complete answer on the first response
+- Ask 1-3 questions per response
+- If the student says "just tell me", switch to direct mode for that question
+- Celebrate correct reasoning enthusiastically
+"""
+
+_TAB_PROMPTS = {
+    "dashboard": BANKING_SYSTEM_PROMPT,
+    "analysis": ANALYSIS_SYSTEM_PROMPT,
+    "mainframe": MAINFRAME_SYSTEM_PROMPT,
+}
+
+
+def _build_system_prompt(mode: str, context: Optional[Dict[str, Any]] = None) -> str:
+    """Build a context-aware system prompt.
+
+    When context is None (backward compat), returns the original prompts.
+    When context is provided, selects a tab-scoped prompt and optionally
+    injects the current selection (file, paragraph, node).
+    """
+    if context is None:
+        return TUTOR_SYSTEM_PROMPT if mode == "tutor" else SYSTEM_PROMPT
+
+    tab = context.get("tab", "dashboard")
+    base = _TAB_PROMPTS.get(tab, SYSTEM_PROMPT)
+
+    if mode == "tutor":
+        base += DUCK_DEBUGGER_RULES
+
+    # Context injection for current selection
+    injections = []
+    if context.get("selected_file"):
+        injections.append(f"The student is currently looking at {context['selected_file']}.")
+    if context.get("selected_paragraph"):
+        injections.append(f"The selected paragraph is {context['selected_paragraph']}.")
+    if context.get("selected_node"):
+        injections.append(f"The selected network node is {context['selected_node']}.")
+    if injections:
+        base += "\n\n## Current Context\n" + " ".join(injections) + " Scope your responses accordingly."
+
+    return base
+
+
 # Safety limit: maximum tool call iterations per chat() invocation.
 # Prevents infinite loops if the LLM keeps requesting tools without
 # producing a final text response. 10 is generous — most resolve in 1-3.
@@ -147,23 +269,31 @@ class ConversationManager:
         self.auth = auth
         self._sessions: Dict[str, List[Dict[str, Any]]] = {}  # session_id -> message list
 
-    def _get_or_create_session(self, session_id: Optional[str] = None, mode: str = "direct") -> tuple:
+    def _get_or_create_session(
+        self, session_id: Optional[str] = None, mode: str = "direct",
+        context: Optional[Dict[str, Any]] = None,
+    ) -> tuple:
         """Get existing session or create new one.
 
-        Returns (session_id, messages). New sessions start with SYSTEM_PROMPT
-        or TUTOR_SYSTEM_PROMPT depending on the mode.
+        Returns (session_id, messages). New sessions start with a context-aware
+        system prompt. Existing sessions get their system prompt updated when
+        context changes (tab switch, new selection).
         """
         if session_id and session_id in self._sessions:
-            return session_id, self._sessions[session_id]
+            messages = self._sessions[session_id]
+            # Update system prompt for existing sessions when context changes
+            if context and messages and messages[0].get("role") == "system":
+                messages[0]["content"] = _build_system_prompt(mode, context)
+            return session_id, messages
         new_id = session_id or str(uuid.uuid4())
-        prompt = TUTOR_SYSTEM_PROMPT if mode == "tutor" else SYSTEM_PROMPT
+        prompt = _build_system_prompt(mode, context)
         self._sessions[new_id] = [{"role": "system", "content": prompt}]
         return new_id, self._sessions[new_id]
 
     # ── Tool-Use Loop ─────────────────────────────────────────────
     # Core loop: send → check tool calls → execute → repeat.
 
-    async def chat(self, message: str, session_id: Optional[str] = None, mode: str = "direct") -> Dict[str, Any]:
+    async def chat(self, message: str, session_id: Optional[str] = None, mode: str = "direct", context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Send a user message and get a response, resolving any tool calls.
 
         1. Get or create session
@@ -179,7 +309,7 @@ class ConversationManager:
         Returns:
             Dict with keys: response, session_id, tool_calls, provider, model
         """
-        session_id, messages = self._get_or_create_session(session_id, mode=mode)
+        session_id, messages = self._get_or_create_session(session_id, mode=mode, context=context)
         messages.append({"role": "user", "content": message})
 
         tools = get_tools_for_role(self.auth.role)  # Only tools this role can use

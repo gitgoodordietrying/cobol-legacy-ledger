@@ -12,14 +12,49 @@ const Chat = (() => {
   let _sending = false;  // Guard against concurrent message submissions
   const sessions = [];  // { id, preview }
 
-  const PROMPT_CHIPS = [
-    'List all accounts in BANK_A',
-    'Explain what PAYROLL.cob does',
-    'What is a nostro account?',
-    'Compare PAYROLL.cob vs TRANSACT.cob',
-    'Verify all chains',
-    'What is PERFORM THRU?',
-  ];
+  // ── Context state (updated via EventBus) ─────────────────────
+  let _currentContext = { tab: 'dashboard', selection: null };
+
+  // ── Tab-scoped prompt chips ──────────────────────────────────
+  const TAB_CHIPS = {
+    dashboard: [
+      'List all accounts in BANK_A',
+      'What is a nostro account?',
+      'Verify all chains',
+      'Run a settlement between BANK_A and BANK_B',
+      'Show me CLEARING accounts',
+      'Explain inter-bank settlement',
+    ],
+    analysis: [
+      'Analyze PAYROLL.cob',
+      'Compare PAYROLL.cob vs TRANSACT.cob',
+      'What is PERFORM THRU?',
+      'Find dead code in DISPUTE.cob',
+      'Explain the ALTER anti-pattern',
+      'Trace execution from P-010 in PAYROLL.cob',
+    ],
+    mainframe: [
+      'What are the four COBOL divisions?',
+      'Explain COMP-3 packed decimal',
+      'How does fixed-format column layout work?',
+      'What is a copybook?',
+      'Explain PICTURE clause',
+      'What is the difference between COMP and COMP-3?',
+    ],
+    chat: [
+      'List all accounts in BANK_A',
+      'Explain what PAYROLL.cob does',
+      'What is a nostro account?',
+      'Compare PAYROLL.cob vs TRANSACT.cob',
+      'Verify all chains',
+      'What is PERFORM THRU?',
+    ],
+  };
+
+  /** Get current chips based on active tab context. */
+  function getCurrentChips() {
+    return TAB_CHIPS[_currentContext.tab] || TAB_CHIPS.chat;
+  }
 
   let _ollamaModels = [];  // Populated dynamically from /api/chat/models
   const ANTHROPIC_MODELS_FULL = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-20250514', 'claude-opus-4-20250514'];
@@ -91,6 +126,19 @@ const Chat = (() => {
       const chatRole = document.getElementById('chatRole');
       if (chatRole) chatRole.textContent = role;
     });
+
+    // ── EventBus subscriptions ───────────────────────────────
+    if (typeof EventBus !== 'undefined') {
+      EventBus.on('tab.changed', (payload) => {
+        _currentContext.tab = payload.tab;
+        refreshChipsForTab();
+        updateContextBadge();
+      });
+      EventBus.on('selection.changed', (payload) => {
+        _currentContext.selection = payload;
+        updateContextBadge();
+      });
+    }
   }
 
   /**
@@ -122,6 +170,13 @@ const Chat = (() => {
       const mode = tutorToggle?.checked ? 'tutor' : 'direct';
       const body = { message, mode };
       if (currentSessionId) body.session_id = currentSessionId;
+      // Include context for tab-scoped system prompts
+      body.context = {
+        tab: _currentContext.tab || 'dashboard',
+        selected_file: _currentContext.selection?.type === 'file' ? _currentContext.selection.id : null,
+        selected_paragraph: _currentContext.selection?.type === 'paragraph' ? _currentContext.selection.id : null,
+        selected_node: _currentContext.selection?.type === 'node' ? _currentContext.selection.id : null,
+      };
 
       const resp = await ApiClient.post('/api/chat', body);
 
@@ -304,7 +359,8 @@ const Chat = (() => {
     currentSessionId = null;
     const container = document.getElementById('chatMessages');
     if (container) {
-      const chipsHtml = PROMPT_CHIPS.map(p =>
+      const chips = getCurrentChips();
+      const chipsHtml = chips.map(p =>
         `<button class="chat-chip" data-prompt="${Utils.escapeHtml(p)}">${Utils.escapeHtml(p)}</button>`
       ).join('');
       container.innerHTML = `
@@ -474,5 +530,61 @@ const Chat = (() => {
     }
   }
 
-  return { init };
+  // ── Context helpers ──────────────────────────────────────────
+
+  /**
+   * Refresh prompt chips to match the active tab.
+   */
+  function refreshChipsForTab() {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    const emptyState = container.querySelector('.chat-empty');
+    if (!emptyState) return;
+    const chipsContainer = emptyState.querySelector('.chat-chips');
+    if (!chipsContainer) return;
+    const chips = getCurrentChips();
+    chipsContainer.innerHTML = chips.map(p =>
+      `<button class="chat-chip" data-prompt="${Utils.escapeHtml(p)}">${Utils.escapeHtml(p)}</button>`
+    ).join('');
+    wireChips();
+  }
+
+  /**
+   * Update the context badge showing what the user is looking at.
+   */
+  function updateContextBadge() {
+    const badge = document.getElementById('chatContextBadge');
+    if (!badge) return;
+    const parts = [];
+    if (_currentContext.tab && _currentContext.tab !== 'chat') {
+      parts.push(_currentContext.tab);
+    }
+    if (_currentContext.selection?.id) {
+      parts.push(_currentContext.selection.id);
+    }
+    badge.textContent = parts.length ? parts.join(' \u203A ') : '';
+  }
+
+  /**
+   * Set chat context from external modules (e.g., "Ask about this" links).
+   */
+  function setContext(tab, selection) {
+    _currentContext.tab = tab;
+    _currentContext.selection = selection;
+    refreshChipsForTab();
+    updateContextBadge();
+  }
+
+  /**
+   * Pre-fill the chat textarea and focus it. Used by "Ask about this" links.
+   */
+  function prefillAndFocus(message) {
+    const textarea = document.getElementById('chatInput');
+    if (textarea) {
+      textarea.value = message;
+      textarea.focus();
+    }
+  }
+
+  return { init, setContext, prefillAndFocus };
 })();

@@ -452,6 +452,18 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
+.exec-path__ask-link {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.exec-path__group-header:hover .exec-path__ask-link {
+  opacity: 1;
+}
+
 .exec-path__group-body {
   display: none;
   padding: var(--sp-2) var(--sp-3);

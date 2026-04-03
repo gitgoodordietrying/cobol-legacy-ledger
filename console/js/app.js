@@ -144,6 +144,7 @@ const App = (() => {
    */
   function switchView(viewName) {
     currentView = viewName;
+    if (typeof EventBus !== 'undefined') EventBus.emit('tab.changed', { tab: viewName });
 
     // Update tab active states and ARIA
     document.querySelectorAll('.nav__tab').forEach(tab => {
@@ -205,7 +206,7 @@ const App = (() => {
     });
   }
 
-  return { init };
+  return { init, switchView };
 })();
 
 // Boot on DOM ready

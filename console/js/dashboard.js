@@ -620,6 +620,13 @@ const Dashboard = (() => {
       });
 
       html += '</tbody></table>';
+
+      // "Ask about this" link → Chat tab with context
+      html += `<button class="btn btn--sm btn--outline" style="margin-top: var(--sp-3);"
+        onclick="if(typeof Chat!=='undefined'){Chat.setContext('dashboard',{type:'node',id:'${Utils.escapeHtml(nodeName)}'});Chat.prefillAndFocus('Show me accounts in ${Utils.escapeHtml(nodeName)}');if(typeof App!=='undefined')App.switchView('chat');}">
+        Ask about ${Utils.escapeHtml(nodeName)} \u2192
+      </button>`;
+
       body.innerHTML = html;
     } catch (err) {
       body.innerHTML = `<span style="color: var(--danger)">${Utils.escapeHtml(err.message)}</span>`;
