@@ -153,6 +153,32 @@ const Mainframe = (() => {
 
   /* ── Templates ─────────────────────────────────────────────── */
 
+  // Default params each codegen template requires
+  const TEMPLATE_PARAMS = {
+    crud: {
+      record_copybook: 'STUDREC',
+      record_name: 'STUDENT-RECORD',
+      file_name: 'STUDENTS',
+      id_field: 'STUD-ID',
+    },
+    report: {
+      input_files: [{ logical_name: 'INPUT-FILE', physical_name: 'STUDENTS.DAT', copybook: 'STUDREC' }],
+      report_types: ['SUMMARY', 'DETAIL'],
+    },
+    batch: {
+      input_file: 'STUDENTS.DAT',
+      input_copybook: 'STUDREC',
+      record_name: 'STUDENT-RECORD',
+    },
+    copybook: {
+      fields: [
+        { name: 'STUD-ID', pic: '9(8)' },
+        { name: 'STUD-NAME', pic: 'X(30)' },
+        { name: 'STUD-GPA', pic: '9V99' },
+      ],
+    },
+  };
+
   async function loadTemplate() {
     const select = document.getElementById('mainframeTemplateSelect');
     const textarea = document.getElementById('mainframeEditor');
@@ -173,7 +199,7 @@ const Mainframe = (() => {
       const data = await ApiClient.post('/api/codegen/generate', {
         template: template,
         name: 'STUDENT',
-        params: {},
+        params: TEMPLATE_PARAMS[template] || {},
       });
 
       textarea.value = data.source || '';
