@@ -190,12 +190,13 @@ def explain_paragraph(req: ExplainParagraphRequest) -> Dict[str, Any]:
 
     # Dead code status
     dead_info = dead_code.to_dict()
-    is_dead = para_name in dead_info.get("dead_paragraphs", [])
+    is_dead = para_name in dead_info.get("dead", [])
     is_alter_conditional = para_name in dead_info.get("alter_conditional", [])
 
     # Data flow for this paragraph
     df_dict = data_flow.to_dict()
-    para_fields = df_dict.get("paragraphs", {}).get(para_name, {})
+    fields_read = df_dict.get("paragraph_reads", {}).get(para_name, [])
+    fields_written = df_dict.get("paragraph_writes", {}).get(para_name, [])
 
     return {
         "paragraph": para_name,
@@ -204,6 +205,6 @@ def explain_paragraph(req: ExplainParagraphRequest) -> Dict[str, Any]:
         "called_by": edges_to,
         "is_dead": is_dead,
         "is_alter_conditional": is_alter_conditional,
-        "fields_read": para_fields.get("reads", []),
-        "fields_written": para_fields.get("writes", []),
+        "fields_read": fields_read,
+        "fields_written": fields_written,
     }
