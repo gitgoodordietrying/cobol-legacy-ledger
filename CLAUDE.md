@@ -139,7 +139,9 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 - `console/js/dashboard.js` — Simulation controls, event feed, tamper demo, verify all
 - `console/js/call-graph.js` — SVG directed graph for paragraph dependencies
 - `console/js/compare-viewer.js` — Split-pane spaghetti vs clean COBOL comparison
-- `console/js/analysis.js` — Analysis view controller (wires graph, trace, compare)
+- `console/js/paragraph-detail.js` — Click-to-explain paragraph deep-dive with KB annotations
+- `console/js/data-flow-view.js` — Field read/write visualization with coupling warnings
+- `console/js/analysis.js` — Analysis view controller (wires graph, trace, compare, detail, data flow, animation)
 - `console/js/chat.js` — LLM chatbot with provider switching and session management
 
 ### Documentation

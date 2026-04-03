@@ -19,6 +19,9 @@ const Analysis = (() => {
   // Trace cache (paragraph name -> execution path)
   const traceCache = {};
 
+  // Animation state for trace playback
+  const _anim = { running: false, timer: null, index: 0, entry: null };
+
   // Payroll files are served from a different path
   const PAYROLL_FILES = new Set([
     'PAYROLL.cob', 'TAXCALC.cob', 'DEDUCTN.cob', 'PAYBATCH.cob',
@@ -136,6 +139,10 @@ const Analysis = (() => {
     if (rendered === 0) {
       container.innerHTML = '<span style="color: var(--text-muted); font-size: var(--text-xs);">No traces available</span>';
     }
+
+    // Show animation controls now that traces are available
+    const animControls = document.getElementById('traceAnimControls');
+    if (animControls && rendered > 0) animControls.style.display = '';
   }
 
   /**
@@ -183,6 +190,13 @@ const Analysis = (() => {
    * Clear all traces when switching files.
    */
   function clearTraces() {
+    // Stop any running animation
+    animReset();
+
+    // Hide animation controls
+    const animControls = document.getElementById('traceAnimControls');
+    if (animControls) animControls.style.display = 'none';
+
     // Clear cache
     Object.keys(traceCache).forEach(k => delete traceCache[k]);
 
@@ -191,6 +205,11 @@ const Analysis = (() => {
     if (container) {
       container.innerHTML = '<span style="color: var(--text-muted); font-size: var(--text-xs);">Click Analyze to trace all execution paths</span>';
     }
+
+    // Reset detail panel
+    const detailContainer = document.getElementById('paragraphDetailContainer');
+    if (detailContainer) detailContainer.innerHTML = '';
+    if (typeof ParagraphDetail !== 'undefined') ParagraphDetail.switchTab('trace');
   }
 
   /**
@@ -450,6 +469,10 @@ const Analysis = (() => {
       if (paragraph) {
         traceFromEntry(paragraph);
         CallGraphView.setSelectedNode(paragraph);
+        // Show paragraph detail panel
+        if (typeof ParagraphDetail !== 'undefined') {
+          ParagraphDetail.show(paragraph);
+        }
         if (typeof EventBus !== 'undefined') {
           EventBus.emit('selection.changed', {
             type: 'paragraph', id: paragraph,
@@ -458,6 +481,16 @@ const Analysis = (() => {
         }
       }
     });
+
+    // Init new modules (loaded before analysis.js via script tags)
+    if (typeof ParagraphDetail !== 'undefined') ParagraphDetail.init();
+    if (typeof DataFlowView !== 'undefined') DataFlowView.init();
+
+    // Wire animation controls
+    document.getElementById('btnTracePlay')?.addEventListener('click', animPlay);
+    document.getElementById('btnTracePause')?.addEventListener('click', animPause);
+    document.getElementById('btnTraceStep')?.addEventListener('click', animStep);
+    document.getElementById('traceEntrySelect')?.addEventListener('change', animReset);
   }
 
   /**
@@ -532,6 +565,155 @@ const Analysis = (() => {
     container.innerHTML = html;
   }
 
-  return { init };
+  /* ── Trace Animation ──────────────────────────────────────────── */
+
+  /**
+   * Start (or resume) trace animation for the selected entry point.
+   * Walks through the trace path step by step, flashing each node
+   * in the call graph SVG with a color matching the control flow type:
+   *   PERFORM = green, GO TO = red, ALTER = amber.
+   */
+  function animPlay() {
+    const entry = document.getElementById('traceEntrySelect')?.value;
+    if (!entry || !traceCache[entry]) {
+      Utils.showToast('Select an entry point first', 'info');
+      return;
+    }
+
+    _anim.entry = entry;
+    _anim.running = true;
+    document.getElementById('btnTracePlay').disabled = true;
+    document.getElementById('btnTracePause').disabled = false;
+
+    // Switch to trace tab so user sees the highlighted steps
+    if (typeof ParagraphDetail !== 'undefined') ParagraphDetail.switchTab('trace');
+
+    // Expand the trace group for this entry
+    highlightTraceGroup(entry);
+
+    animTick();
+  }
+
+  /** Pause the running animation. */
+  function animPause() {
+    _anim.running = false;
+    clearTimeout(_anim.timer);
+    document.getElementById('btnTracePlay').disabled = false;
+    document.getElementById('btnTracePause').disabled = true;
+  }
+
+  /** Advance exactly one step (manual stepping). */
+  function animStep() {
+    const entry = document.getElementById('traceEntrySelect')?.value;
+    if (!entry || !traceCache[entry]) return;
+    if (!_anim.entry) {
+      _anim.entry = entry;
+      _anim.index = 0;
+      if (typeof ParagraphDetail !== 'undefined') ParagraphDetail.switchTab('trace');
+      highlightTraceGroup(entry);
+    }
+    animAdvance();
+  }
+
+  /** Reset animation state (called on entry change or clear). */
+  function animReset() {
+    _anim.running = false;
+    _anim.index = 0;
+    _anim.entry = null;
+    clearTimeout(_anim.timer);
+    animClearFlash();
+    const play = document.getElementById('btnTracePlay');
+    const pause = document.getElementById('btnTracePause');
+    if (play) play.disabled = false;
+    if (pause) pause.disabled = true;
+  }
+
+  /** Internal tick: advance one step, then schedule the next. */
+  function animTick() {
+    if (!_anim.running) return;
+    const path = traceCache[_anim.entry];
+    if (!path || _anim.index >= path.length) {
+      animReset();
+      return;
+    }
+    animAdvance();
+    const speed = parseInt(document.getElementById('traceSpeedSelect')?.value || '400');
+    _anim.timer = setTimeout(animTick, speed);
+  }
+
+  /** Advance to the next step: flash node + highlight step element. */
+  function animAdvance() {
+    const path = traceCache[_anim.entry];
+    if (!path || _anim.index >= path.length) {
+      animReset();
+      return;
+    }
+
+    const step = path[_anim.index];
+    const via = step.via || 'PERFORM';
+
+    // Flash the node in the call graph SVG
+    animFlashNode(step.paragraph, via);
+
+    // Highlight the step in the trace panel
+    animHighlightStep(_anim.entry, _anim.index);
+
+    _anim.index++;
+  }
+
+  /** Apply a colored flash to the call graph node rect. */
+  function animFlashNode(paragraphName, via) {
+    animClearFlash();
+    const cg = document.getElementById('callGraphContainer');
+    if (!cg) return;
+
+    const rect = cg.querySelector(`.cg-node__rect[data-paragraph="${paragraphName}"]`);
+    if (!rect) return;
+
+    let cls = 'cg-node__rect--flash-perform';
+    if (via === 'GOTO' || via === 'GO TO') cls = 'cg-node__rect--flash-goto';
+    else if (via.includes('ALTER')) cls = 'cg-node__rect--flash-alter';
+
+    rect.classList.add(cls);
+  }
+
+  /** Remove all flash classes from call graph nodes. */
+  function animClearFlash() {
+    const cg = document.getElementById('callGraphContainer');
+    if (!cg) return;
+    cg.querySelectorAll('.cg-node__rect').forEach(r => {
+      r.classList.remove(
+        'cg-node__rect--flash-perform',
+        'cg-node__rect--flash-goto',
+        'cg-node__rect--flash-alter'
+      );
+    });
+  }
+
+  /** Highlight the i-th step within the trace group for entry. */
+  function animHighlightStep(entry, stepIndex) {
+    const container = document.getElementById('execPathContainer');
+    if (!container) return;
+
+    // Clear previous animation highlight
+    container.querySelectorAll('.exec-path__step--anim-active').forEach(s => {
+      s.classList.remove('exec-path__step--anim-active');
+    });
+
+    const group = container.querySelector(`.exec-path__group[data-entry="${entry}"]`);
+    if (!group) return;
+
+    const steps = group.querySelectorAll('.exec-path__step');
+    if (steps[stepIndex]) {
+      steps[stepIndex].classList.add('exec-path__step--anim-active');
+      steps[stepIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  /* ── Public getters for cross-module access ────────────────────── */
+
+  function getTraceCache() { return traceCache; }
+
+  return { init, fetchSource, getTraceCache };
 
 })();

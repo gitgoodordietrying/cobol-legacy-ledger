@@ -195,6 +195,7 @@
           <button class="btn btn--primary" id="btnAnalyze">Analyze</button>
           <button class="btn" id="btnCompare">Compare Spaghetti vs Clean</button>
           <button class="btn" id="btnCrossFile">Cross-File Analysis</button>
+          <button class="btn" id="btnDataFlow">Data Flow</button>
         </div>
 
         <!-- Analysis Summary Stats -->
@@ -212,10 +213,23 @@
             <div class="call-graph__svg-wrap" id="callGraphContainer"></div>
           </div>
 
-          <!-- Execution Path / Details -->
+          <!-- Execution Path / Paragraph Detail (tabbed) -->
           <div class="glass" id="analysisDetailsCard">
             <div class="glass__header">
-              <span>Execution Trace</span>
+              <div class="detail-tabs">
+                <button class="detail-tab detail-tab--active" id="tabTrace">Trace</button>
+                <button class="detail-tab" id="tabDetail">Detail</button>
+              </div>
+              <div class="trace-anim" id="traceAnimControls" style="display: none;">
+                <button class="btn btn--xs" id="btnTracePlay" title="Play animation">&#9654;</button>
+                <button class="btn btn--xs" id="btnTracePause" title="Pause" disabled>&#9208;</button>
+                <button class="btn btn--xs" id="btnTraceStep" title="Step forward">&#9197;</button>
+                <select class="select" id="traceSpeedSelect" style="width: auto; font-size: var(--text-xs);">
+                  <option value="800">Slow</option>
+                  <option value="400" selected>Medium</option>
+                  <option value="150">Fast</option>
+                </select>
+              </div>
               <select class="select" id="traceEntrySelect" style="width: auto; font-size: var(--text-xs);">
                 <option value="">Select entry point...</option>
               </select>
@@ -223,6 +237,7 @@
             <div id="execPathContainer">
               <span style="color: var(--text-muted); font-size: var(--text-xs);">Click Analyze to trace all execution paths</span>
             </div>
+            <div id="paragraphDetailContainer" style="display: none;"></div>
           </div>
 
         </div>
@@ -244,6 +259,15 @@
           </div>
           <div id="crossFileGraphContainer" style="min-height: 300px;"></div>
           <div id="crossFileSummary" style="padding: var(--sp-3);"></div>
+        </div>
+
+        <!-- Data Flow Analysis (hidden by default) -->
+        <div class="glass" id="dataFlowCard" style="display: none;">
+          <div class="glass__header">
+            <span>Data Flow Analysis</span>
+            <button class="btn btn--sm" id="btnCloseDataFlow">Close</button>
+          </div>
+          <div id="dataFlowContainer"></div>
         </div>
 
       </div>
@@ -429,6 +453,8 @@
   <script src="js/cobol-viewer.js"></script>
   <script src="js/call-graph.js"></script>
   <script src="js/compare-viewer.js"></script>
+  <script src="js/paragraph-detail.js"></script>
+  <script src="js/data-flow-view.js"></script>
   <script src="js/dashboard.js"></script>
   <script src="js/chat.js"></script>
   <script src="js/analysis.js"></script>
