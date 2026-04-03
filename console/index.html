@@ -18,6 +18,8 @@
   <link rel="stylesheet" href="css/dashboard.css">
   <link rel="stylesheet" href="css/chat.css">
   <link rel="stylesheet" href="css/analysis.css">
+  <link rel="stylesheet" href="css/mainframe.css">
+  <link rel="stylesheet" href="css/polish.css">
 </head>
 <body>
 
@@ -27,10 +29,16 @@
     <div class="nav__tabs" role="tablist" aria-label="Main navigation">
       <button class="nav__tab nav__tab--active" data-view="dashboard" role="tab" aria-selected="true" aria-controls="view-dashboard" id="tab-dashboard">Dashboard</button>
       <button class="nav__tab" data-view="analysis" role="tab" aria-selected="false" aria-controls="view-analysis" id="tab-analysis">Analysis</button>
+      <button class="nav__tab" data-view="mainframe" role="tab" aria-selected="false" aria-controls="view-mainframe" id="tab-mainframe">Mainframe</button>
       <button class="nav__tab" data-view="chat" role="tab" aria-selected="false" aria-controls="view-chat" id="tab-chat">Chat</button>
     </div>
     <div class="nav__spacer"></div>
     <div class="health-dot" id="healthDot" title="API health"></div>
+    <div class="fun-facts-group">
+      <input type="checkbox" id="funFactsToggle">
+      <label for="funFactsToggle">Fun Facts</label>
+      <button class="nav__help-btn" id="btnTimeline" title="COBOL Timeline" style="font-size: 10px; padding: 0 4px;">TL</button>
+    </div>
     <button class="nav__help-btn" id="btnShowHelp" title="Show onboarding guide">?</button>
     <div class="nav__role-group">
       <label class="nav__role-label" for="roleSelect">Demo Role</label>
@@ -42,6 +50,9 @@
       </select>
     </div>
   </nav>
+
+  <!-- ── Breadcrumb Bar ────────────────────────────────────────── -->
+  <div class="breadcrumb-bar" id="breadcrumbBar"></div>
 
   <!-- ── Main Content ──────────────────────────────────────────── -->
   <main class="main">
@@ -273,6 +284,83 @@
       </div>
     </section>
 
+    <!-- ═══ Mainframe View ══════════════════════════════════════ -->
+    <section class="view" id="view-mainframe" role="tabpanel" aria-labelledby="tab-mainframe">
+      <div class="mainframe-layout">
+
+        <!-- Controls -->
+        <div class="glass controls mainframe-controls">
+          <select class="select" id="mainframeTemplateSelect" title="Load a starter template">
+            <option value="">Load template...</option>
+            <option value="crud">CRUD Program</option>
+            <option value="report">Report Program</option>
+            <option value="batch">Batch Processor</option>
+            <option value="copybook">Copybook Record</option>
+          </select>
+          <div class="controls__divider"></div>
+          <button class="btn" id="btnFormatToggle" title="Toggle fixed/free format">Format</button>
+          <span class="mf-format-badge mf-format-badge--free" id="formatBadge">FREE</span>
+          <select class="select" id="dialectSelect" title="Compiler dialect" style="width: auto; font-size: var(--text-xs);">
+            <option value="default">Default</option>
+            <option value="ibm">IBM</option>
+            <option value="mf">Micro Focus</option>
+            <option value="cobol2014">COBOL 2014</option>
+          </select>
+          <div class="controls__divider"></div>
+          <button class="btn btn--primary" id="btnCompile">Compile</button>
+        </div>
+
+        <!-- Three-column grid: Editor | Output | Sidebar -->
+        <div class="mainframe-grid">
+
+          <!-- Editor -->
+          <div class="glass mf-editor">
+            <div class="glass__header">
+              <span>COBOL Editor</span>
+              <span class="badge badge--info" id="editorLineCount">0 lines</span>
+            </div>
+            <div class="mf-editor__wrap">
+              <div class="mf-editor__gutter" id="mainframeGutter">1</div>
+              <div class="mf-editor__content" id="mainframeContent">
+                <div class="mf-editor__col-indicators" id="mainframeColIndicators"></div>
+                <div class="mf-editor__overlay" id="mainframeOverlay"></div>
+                <textarea class="mf-editor__textarea" id="mainframeEditor"
+                  spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+                  placeholder="       IDENTIFICATION DIVISION.&#10;       PROGRAM-ID. STUDENT.&#10;       PROCEDURE DIVISION.&#10;           DISPLAY 'HELLO COBOL'.&#10;           STOP RUN."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Output -->
+          <div class="glass mf-output">
+            <div class="glass__header">
+              <span>JCL Output</span>
+            </div>
+            <div class="mf-output__terminal" id="mainframeTerminal">
+              <div class="mf-output__placeholder">Compile your COBOL program to see JCL-style output here.</div>
+            </div>
+          </div>
+
+          <!-- Quick Reference Sidebar -->
+          <div class="mf-sidebar">
+            <div class="glass mf-sidebar__section">
+              <div class="mf-sidebar__header">FILE STATUS Codes</div>
+              <div class="mf-sidebar__body" id="refFileStatus"></div>
+            </div>
+            <div class="glass mf-sidebar__section">
+              <div class="mf-sidebar__header">ABEND Codes</div>
+              <div class="mf-sidebar__body" id="refAbendCodes"></div>
+            </div>
+            <div class="glass mf-sidebar__section">
+              <div class="mf-sidebar__header">Dialect Notes</div>
+              <div class="mf-sidebar__body" id="refDialect"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
     <!-- ═══ Chat View ════════════════════════════════════════════ -->
     <section class="view" id="view-chat" role="tabpanel" aria-labelledby="tab-chat">
       <div class="chat-layout">
@@ -455,6 +543,11 @@
   <script src="js/compare-viewer.js"></script>
   <script src="js/paragraph-detail.js"></script>
   <script src="js/data-flow-view.js"></script>
+  <script src="js/mainframe.js"></script>
+  <script src="js/fun-facts.js"></script>
+  <script src="js/onboarding.js"></script>
+  <script src="js/chain-defense.js"></script>
+  <script src="js/breadcrumbs.js"></script>
   <script src="js/dashboard.js"></script>
   <script src="js/chat.js"></script>
   <script src="js/analysis.js"></script>

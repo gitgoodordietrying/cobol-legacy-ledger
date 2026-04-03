@@ -97,6 +97,13 @@ def create_app() -> FastAPI:
     except ImportError:
         pass  # Analysis module not available
 
+    # Mainframe compile endpoint (WS5 — COBOL editor with real cobc).
+    try:
+        from python.api.routes_mainframe import router as mainframe_router
+        app.include_router(mainframe_router)
+    except ImportError:
+        pass  # Mainframe module not available
+
     # Chat router depends on python.llm (optional httpx/anthropic packages).
     # If the LLM layer isn't importable, the API still serves banking and
     # codegen endpoints — graceful degradation for minimal installs.

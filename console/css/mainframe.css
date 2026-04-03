@@ -1,0 +1,356 @@
+/* ── Mainframe Dashboard (COBOL Editor + Compile + Output) ──────
+   Virtual dry-erase board for writing, compiling, and running COBOL.
+   Three-column layout: Editor | Output | Quick Reference sidebar.
+   ────────────────────────────────────────────────────────────────── */
+
+/* ── Layout ──────────────────────────────────────────────────── */
+.mainframe-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  height: calc(100vh - 56px - 32px);
+}
+
+.mainframe-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 260px;
+  gap: var(--sp-4);
+  min-height: 0;
+}
+
+@media (max-width: 1400px) {
+  .mainframe-grid { grid-template-columns: 1fr 1fr; }
+  .mf-sidebar { display: none; }
+}
+
+@media (max-width: 900px) {
+  .mainframe-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Controls Strip ──────────────────────────────────────────── */
+.mainframe-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.mainframe-controls .controls__divider {
+  width: 1px;
+  height: 24px;
+  background: var(--glass-border);
+  margin: 0 var(--sp-1);
+}
+
+/* ── Editor Panel ────────────────────────────────────────────── */
+.mf-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mf-editor__wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background: rgba(10, 14, 30, 0.9);
+}
+
+/* Line numbers gutter */
+.mf-editor__gutter {
+  width: 40px;
+  min-width: 40px;
+  padding: var(--sp-2) var(--sp-1);
+  background: rgba(0, 0, 0, 0.3);
+  border-right: 1px solid var(--glass-border);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: right;
+  overflow: hidden;
+  user-select: none;
+  white-space: pre;
+}
+
+/* Editor content area (textarea + overlay stacked) */
+.mf-editor__content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+/* Textarea (transparent — captures input) */
+.mf-editor__textarea {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: transparent;
+  caret-color: var(--success);
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 4;
+  z-index: 2;
+}
+
+/* Highlighted overlay (visual — pointer-events: none) */
+.mf-editor__overlay {
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text-primary);
+  pointer-events: none;
+  min-height: 100%;
+  z-index: 1;
+}
+
+/* Column indicator lines (7, 12, 72) */
+.mf-editor__col-indicators {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.mf-editor__col-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  opacity: 0.15;
+}
+
+.mf-editor__col-line--7 {
+  background: var(--danger);
+}
+
+.mf-editor__col-line--12 {
+  background: var(--success);
+}
+
+.mf-editor__col-line--72 {
+  background: var(--warning);
+}
+
+.mf-editor__col-label {
+  position: absolute;
+  top: 2px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+/* Format badge */
+.mf-format-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.mf-format-badge--free {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+/* ── Output Panel (JCL Terminal) ─────────────────────────────── */
+.mf-output {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mf-output__terminal {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  background: rgba(10, 14, 30, 0.9);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--success);
+  min-height: 200px;
+}
+
+.mf-output__entry {
+  margin-bottom: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.mf-output__entry:last-child {
+  border-bottom: none;
+}
+
+.mf-output__job-card {
+  color: #22c55e;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.mf-output__line {
+  display: block;
+  min-height: 1.4em;
+}
+
+.mf-output__line--error {
+  color: var(--danger);
+}
+
+.mf-output__line--warning {
+  color: #f59e0b;
+}
+
+.mf-output__line--success {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.mf-output__line--info {
+  color: var(--text-muted);
+}
+
+.mf-output__line--clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 2px;
+}
+
+.mf-output__line--clickable:hover {
+  color: var(--text-accent);
+}
+
+.mf-output__maxcc {
+  font-weight: 700;
+  font-size: var(--text-sm);
+  margin-top: var(--sp-2);
+}
+
+.mf-output__maxcc--ok { color: var(--success); }
+.mf-output__maxcc--warn { color: #f59e0b; }
+.mf-output__maxcc--err { color: var(--danger); }
+
+.mf-output__mode-banner {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 3px;
+  margin-bottom: var(--sp-2);
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.mf-output__placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+  padding: var(--sp-4);
+  text-align: center;
+}
+
+/* ── Quick Reference Sidebar ─────────────────────────────────── */
+.mf-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  overflow-y: auto;
+}
+
+.mf-sidebar__section {
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.mf-sidebar__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.mf-sidebar__header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mf-sidebar__header::after {
+  content: '\25B6';
+  font-size: 8px;
+  transition: transform var(--transition-fast);
+}
+
+.mf-sidebar__section--open .mf-sidebar__header::after {
+  transform: rotate(90deg);
+}
+
+.mf-sidebar__body {
+  display: none;
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.mf-sidebar__section--open .mf-sidebar__body {
+  display: block;
+}
+
+.mf-ref-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.mf-ref-table td {
+  padding: 2px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: top;
+}
+
+.mf-ref-table td:first-child {
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-accent);
+  width: 48px;
+}
+
+.mf-ref-table td:last-child {
+  color: var(--text-muted);
+}

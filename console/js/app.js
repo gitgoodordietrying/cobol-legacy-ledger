@@ -38,6 +38,11 @@ const App = (() => {
     Dashboard.init();
     Chat.init();
     Analysis.init();
+    if (typeof Mainframe !== 'undefined') Mainframe.init();
+    if (typeof FunFacts !== 'undefined') FunFacts.init();
+    if (typeof Onboarding !== 'undefined') Onboarding.init();
+    if (typeof ChainDefense !== 'undefined') ChainDefense.init();
+    if (typeof Breadcrumbs !== 'undefined') Breadcrumbs.init();
 
     // View switching
     document.querySelectorAll('.nav__tab').forEach(tab => {

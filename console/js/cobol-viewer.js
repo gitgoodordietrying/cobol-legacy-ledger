@@ -261,5 +261,5 @@ const CobolViewer = (() => {
     }
   }
 
-  return { init, highlightForEvent, clearLog };
+  return { init, highlightForEvent, clearLog, highlightLine };
 })();

@@ -103,6 +103,7 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 - `python/api/routes_health.py` — System health check
 - `python/api/routes_payroll.py` — Payroll employee/run/stubs endpoints
 - `python/api/routes_analysis.py` — COBOL analysis (call graph, trace, dead code, complexity)
+- `python/api/routes_mainframe.py` — COBOL compile endpoint (Mode A cobc / Mode B validation)
 - `python/payroll_bridge.py` — Payroll COBOL bridge (Mode A/B) + settlement integration
 - `python/llm/tools.py` — 20 tool definitions (8 banking + 4 codegen + 8 analysis)
 - `python/llm/tool_executor.py` — RBAC-gated dispatch to bridge/codegen/analyzer
@@ -142,6 +143,11 @@ This is a **teaching resource** for IT classes. Every COBOL and Python source fi
 - `console/js/paragraph-detail.js` — Click-to-explain paragraph deep-dive with KB annotations
 - `console/js/data-flow-view.js` — Field read/write visualization with coupling warnings
 - `console/js/analysis.js` — Analysis view controller (wires graph, trace, compare, detail, data flow, animation)
+- `console/js/mainframe.js` — COBOL editor, compile button, JCL output, templates, quick reference
+- `console/js/fun-facts.js` — Toggleable educational facts overlay (29 facts) + COBOL timeline modal
+- `console/js/onboarding.js` — Multi-step walkthrough (6 steps) replacing old popup
+- `console/js/chain-defense.js` — Konami code arcade easter egg (5 waves, Canvas game)
+- `console/js/breadcrumbs.js` — EventBus-driven navigation trail
 - `console/js/chat.js` — LLM chatbot with provider switching and session management
 
 ### Documentation
